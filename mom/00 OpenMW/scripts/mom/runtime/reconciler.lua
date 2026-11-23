@@ -170,7 +170,9 @@ function M.new(opts)
   local staticSettled = {}       -- cellKey -> true (per-cell static fence cleared)
   local staticPlanCache = {}     -- cellKey -> { actionIds, planHash }
   local doorOriginsCaptured = {} -- cellKey -> true (proactive Door starting-transform capture)
-  local stateDirty = true        -- reconcile state on startup + whenever guards/cells/ops change
+  local stateDirtyAll = true     -- full state scan on startup + explicit full invalidation
+  local dirtyOwners = {}         -- ownerId -> true (scoped dirty guard owners)
+  local dirtyStateCells = {}     -- cellKey -> true (scoped cells with new/changed state work)
   local staticFailureCount = 0
   local blockersSample = {}
 
@@ -328,15 +330,16 @@ function M.new(opts)
   end
 
   local function evaluateRootRefMatch(action, meta, mod, targetFilter, ref, facts, cellEntry, frame)
-    -- Prevent self-recursion and re-replacing MOM-generated mesh-variant outputs,
-    -- while allowing standalone root actions (e.g. kill_actor) to target MOM-placed refs!
+    -- Prevent self-recursion and respect action-declared generated-root policy
+    -- (e.g. relative attach skips MOM-generated outputs, while standalone kill_actor allows them).
     if facts.isGenerated then
       local outId = ledger:getOutputIdByObjectId(facts.objectId)
       if outId ~= nil then
         local stored = ledger:getRef(outId)
         local prodOp = stored and stored.producerId and ledger:getOp(stored.producerId) or nil
         if prodOp ~= nil and prodOp.actionId == action.id then return false end
-        if action.family == 'place_ref' and action.program and action.program.mode == 'relative' then
+        if mod ~= nil and type(mod.acceptsGeneratedRoot) == 'function'
+            and mod.acceptsGeneratedRoot(action.program) == false then
           return false
         end
       end
@@ -719,7 +722,7 @@ function M.new(opts)
       end
       staticQueue[cellKey] = nil
       staticSettled[cellKey] = true
-      stateDirty = true
+      dirtyStateCells[cellKey] = true
       return true
     end
 
@@ -813,31 +816,51 @@ function M.new(opts)
       })
       staticQueue[cellKey] = nil
       staticSettled[cellKey] = true
-      stateDirty = true
+      dirtyStateCells[cellKey] = true
       return true
     end
     return false
   end
 
+  local function hasStateWork()
+    return stateDirtyAll or next(dirtyOwners) ~= nil or next(dirtyStateCells) ~= nil
+  end
+
   local function reconcileState(frame, counter)
+    local fullScan = stateDirtyAll == true
+    local scopedOwners = dirtyOwners
+    local scopedCells = dirtyStateCells
+    local hasScopedCells = next(scopedCells) ~= nil
+
     local observed = session.world.observedCells()
     local settledCells = {}
+    local settledScopedCells = {}
+    local allSettledKeys = {}
     for key, entry in pairs(observed) do
       if staticSettled[key] == true or not staticQueue[key] then
         settledCells[#settledCells + 1] = entry
+        allSettledKeys[key] = true
+        if scopedCells[key] then
+          settledScopedCells[#settledScopedCells + 1] = entry
+        end
       end
     end
     table.sort(settledCells, function(a, b) return a.facts.key < b.facts.key end)
+    table.sort(settledScopedCells, function(a, b) return a.facts.key < b.facts.key end)
 
-    -- 1. Build desired root state candidates across all ACTIVE owners and settled cells.
+    -- 1. Build desired root state candidates (scoped to dirty owners & dirty cells when incremental).
     local desiredCandidates = {}
     local desiredBySemantic = {}
+    local desiredTargets = {}
+    local desiredConflictGroups = {}
+    local arbitratedExisting = {}
     local anyFenced = false
 
     local function addStateCandidate(ownerId, action, t)
       local semId = identity.semanticId(action.id, t.targetId, nil)
       if not desiredBySemantic[semId] then
         local existing = ledger:getOpBySemanticId(semId)
+        local conflict = action.claims and action.claims.conflict or nil
         local cand = {
           id = semId,
           semanticId = semId,
@@ -852,7 +875,7 @@ function M.new(opts)
           parentOpId = nil,
           depth = 0,
           claims = action.claims and action.claims.keys or {},
-          conflict = action.claims and action.claims.conflict or nil,
+          conflict = conflict,
           priority = action.priority,
           specificity = action.specificity,
           order = action.order,
@@ -861,6 +884,11 @@ function M.new(opts)
         }
         desiredBySemantic[semId] = cand
         desiredCandidates[#desiredCandidates + 1] = cand
+        desiredTargets[t.targetId] = true
+        if type(conflict) == 'table' and type(conflict.group) == 'string' and conflict.group ~= '' then
+          desiredConflictGroups[conflict.group] = true
+        end
+        if existing ~= nil then arbitratedExisting[existing.id] = true end
       end
     end
 
@@ -899,16 +927,27 @@ function M.new(opts)
       return false
     end
 
-    for _, ownerId in ipairs(manifest.ownerIds or {}) do
+    local ownersToScan
+    if fullScan or hasScopedCells then
+      ownersToScan = manifest.ownerIds or {}
+    else
+      ownersToScan = {}
+      for oid in pairs(scopedOwners) do ownersToScan[#ownersToScan + 1] = oid end
+      table.sort(ownersToScan)
+    end
+
+    for _, ownerId in ipairs(ownersToScan) do
       if guards.truth(ownerId) == 'active' then
         local owner = manifest.ownersById[ownerId]
-        for ai = 1, #(owner.actionIds or {}) do
+        local ownerFull = fullScan or scopedOwners[ownerId] == true
+        local cellsForOwner = ownerFull and settledCells or settledScopedCells
+        for ai = 1, #(owner and owner.actionIds or {}) do
           local action = manifest.actionsById[owner.actionIds[ai]]
           if action ~= nil and action.parentId == nil then
             local seenCells = {}
-            for ci = 1, #settledCells do
-              seenCells[settledCells[ci].facts.key] = true
-              local targets, wasFenced = discoverRootTargetsInCell(action, settledCells[ci], frame, counter)
+            for ci = 1, #cellsForOwner do
+              seenCells[cellsForOwner[ci].facts.key] = true
+              local targets, wasFenced = discoverRootTargetsInCell(action, cellsForOwner[ci], frame, counter)
               if wasFenced then anyFenced = true end
               for ti = 1, #targets do
                 addStateCandidate(ownerId, action, targets[ti])
@@ -916,10 +955,13 @@ function M.new(opts)
             end
             -- Exact interior cell-scoped state actions resolve their target cell when
             -- previsit is requested or when a descendant relocates into an observed cell.
+            local descCheckCells = ownerFull and allSettledKeys or scopedCells
             if action.scope == 'cell' and action.selection and action.selection.cell
-                and (action.previsit == true or hasObservedDescendantQueryCell(action, seenCells)) then
+                and ((ownerFull and action.previsit == true) or hasObservedDescendantQueryCell(action, descCheckCells)) then
               local exactKeys = {}
-              collectExactInteriorKeys(action.selection.cell.route, exactKeys, seenCells)
+              local skipCells = {}
+              for k in pairs(seenCells) do skipCells[k] = true end
+              collectExactInteriorKeys(action.selection.cell.route, exactKeys, skipCells)
               for ki = 1, #exactKeys do
                 local cellHandle = session.world.resolveCell(exactKeys[ki])
                 local cellFacts = cellHandle ~= nil and session.world.describeCell(cellHandle) or nil
@@ -933,16 +975,15 @@ function M.new(opts)
                 end
               end
             end
-            -- If an action has a secondary queryCell (e.g. cross-cell relocate
-            -- destination) currently observed and exact ref numbers in query.ref,
-            -- resolve those exact refs even after the player already left the source cell.
+            -- Secondary queryCell exact ref resolution for cross-cell relocations.
             local meta = actionMeta[action.id]
             if meta and meta.query and meta.query.ref and meta.queryCells then
               local queryObserved = false
               for qi = 1, #meta.queryCells do
                 local qc = meta.queryCells[qi]
                 local qk = type(qc) == 'table' and (qc.interiorKey or qc.key or qc.id) or nil
-                if qk ~= nil and observed[lower(qk) or ''] ~= nil then
+                local ql = qk and lower(qk) or nil
+                if ql ~= nil and ((ownerFull and observed[ql] ~= nil) or scopedCells[ql] == true) then
                   queryObserved = true
                   break
                 end
@@ -976,68 +1017,113 @@ function M.new(opts)
       end
     end
 
-    -- 1b. Retain currently-applied/pending root state ops whose guard is STILL active
-    -- (e.g. a modify_ref op that relocated its target to another cell or disabled it).
-    -- They still compete in arbitration if a higher-ranked candidate targets the same claims.
-    local activeStateOps = ledger:opsForLifecycle('state')
-    if activeStateOps ~= nil then
-      for opId in pairs(activeStateOps) do
-        local op = ledger:getOp(opId)
-        if op ~= nil and op.parentOpId == nil
-            and (op.state == 'applied' or op.state == 'pending')
-            and not desiredBySemantic[op.semanticId] then
-          local action = manifest.actionsById[op.actionId]
-          if action ~= nil and op.ownerId ~= nil and manifest.ownersById[op.ownerId] ~= nil
-              and guards.truth(op.ownerId) == 'active' then
-            local cand = {
-              id = op.semanticId,
-              semanticId = op.semanticId,
-              action = action,
-              actionId = action.id,
-              ownerId = op.ownerId,
-              targetId = op.targetId,
-              cellKey = op.cellKey,
-              parentOpId = nil,
-              depth = 0,
-              claims = action.claims and action.claims.keys or {},
-              conflict = action.claims and action.claims.conflict or nil,
-              priority = action.priority,
-              specificity = action.specificity,
-              order = action.order,
-              chance = action.chance,
-              existingOp = op,
-            }
-            desiredBySemantic[op.semanticId] = cand
-            desiredCandidates[#desiredCandidates + 1] = cand
+    -- 1b. Retain existing applied/pending root state ops in scope (or competing on
+    -- any candidate target or conflict group) so arbitration stays globally exact.
+    local function includeExistingStateOp(op)
+      if op == nil or op.parentOpId ~= nil or op.lifecycle ~= 'state'
+          or (op.state ~= 'applied' and op.state ~= 'pending')
+          or desiredBySemantic[op.semanticId] ~= nil then
+        return
+      end
+      local action = manifest.actionsById[op.actionId]
+      if action ~= nil and op.ownerId ~= nil and manifest.ownersById[op.ownerId] ~= nil
+          and guards.truth(op.ownerId) == 'active' then
+        local conflict = action.claims and action.claims.conflict or nil
+        local cand = {
+          id = op.semanticId,
+          semanticId = op.semanticId,
+          action = action,
+          actionId = action.id,
+          ownerId = op.ownerId,
+          targetId = op.targetId,
+          cellKey = op.cellKey,
+          parentOpId = nil,
+          depth = 0,
+          claims = action.claims and action.claims.keys or {},
+          conflict = conflict,
+          priority = action.priority,
+          specificity = action.specificity,
+          order = action.order,
+          chance = action.chance,
+          existingOp = op,
+        }
+        desiredBySemantic[op.semanticId] = cand
+        desiredCandidates[#desiredCandidates + 1] = cand
+        arbitratedExisting[op.id] = true
+      end
+    end
+
+    if fullScan or next(desiredConflictGroups) ~= nil then
+      local activeStateOps = ledger:opsForLifecycle('state')
+      if activeStateOps ~= nil then
+        for opId in pairs(activeStateOps) do
+          local op = ledger:getOp(opId)
+          if op ~= nil then
+            if fullScan then
+              includeExistingStateOp(op)
+            else
+              local act = manifest.actionsById[op.actionId]
+              local grp = act and act.claims and act.claims.conflict and act.claims.conflict.group or nil
+              if (grp ~= nil and desiredConflictGroups[grp])
+                  or desiredTargets[op.targetId]
+                  or scopedOwners[op.ownerId]
+                  or (op.cellKey ~= nil and scopedCells[op.cellKey]) then
+                includeExistingStateOp(op)
+              end
+            end
           end
+        end
+      end
+    else
+      for targetId in pairs(desiredTargets) do
+        local ops = ledger:opsForTarget(targetId)
+        if ops ~= nil then
+          for opId in pairs(ops) do includeExistingStateOp(ledger:getOp(opId)) end
+        end
+      end
+      for ownerId in pairs(scopedOwners) do
+        local ops = ledger:opsForOwner(ownerId)
+        if ops ~= nil then
+          for opId in pairs(ops) do includeExistingStateOp(ledger:getOp(opId)) end
+        end
+      end
+      for cellKey in pairs(scopedCells) do
+        local ops = ledger:opsForCell(cellKey)
+        if ops ~= nil then
+          for opId in pairs(ops) do includeExistingStateOp(ledger:getOp(opId)) end
         end
       end
     end
 
-    -- 2. Build occupied claims: unfinished static ops + unknown-owner state ops.
+    -- 2. Build occupied claims in O(pending + unknown_state_ops) instead of scanning all ops.
     -- Completed current static ops deliberately do NOT block state layering!
     local occupied = {}
-    for opId, op in pairs(ledger.doc.ops) do
-      local hold = false
-      if op.lifecycle == 'static' then
-        if op.state == 'pending' or op.state == 'reverting' then
-          hold = true
-        end
-      elseif op.lifecycle == 'state' then
-        if op.state == 'applied' or op.state == 'pending' or op.state == 'reverting' then
-          local ownerExists = op.ownerId ~= nil and manifest.ownersById[op.ownerId] ~= nil
-          if ownerExists and guards.truth(op.ownerId) == 'unknown' then
-            hold = true
-          end
+    local function markOccupied(opId, op)
+      local byClaim = occupied[op.targetId]
+      for j = 1, #(op.claims or {}) do
+        local key = op.claims[j]
+        if key ~= 'output.existence' then
+          if byClaim == nil then byClaim = {}; occupied[op.targetId] = byClaim end
+          byClaim[key] = opId
         end
       end
-      if hold then
-        local byClaim = occupied[op.targetId]
-        for j = 1, #(op.claims or {}) do
-          local key = op.claims[j]
-          if key ~= 'output.existence' then
-            if byClaim == nil then byClaim = {}; occupied[op.targetId] = byClaim end
-            byClaim[key] = opId
+    end
+    for opId in pairs(ledger:pendingOps()) do
+      local op = ledger:getOp(opId)
+      if op ~= nil and op.lifecycle == 'static' then
+        markOccupied(opId, op)
+      end
+    end
+    for ownerId in pairs(guards.unknownOwners()) do
+      if manifest.ownersById[ownerId] ~= nil then
+        local ops = ledger:opsForOwner(ownerId)
+        if ops ~= nil then
+          for opId in pairs(ops) do
+            local op = ledger:getOp(opId)
+            if op ~= nil and op.lifecycle == 'state'
+                and (op.state == 'applied' or op.state == 'pending' or op.state == 'reverting') then
+              markOccupied(opId, op)
+            end
           end
         end
       end
@@ -1063,33 +1149,49 @@ function M.new(opts)
       cleanupList[#cleanupList + 1] = {op = op, depth = depth, semanticId = op.semanticId}
     end
 
-    local stateOps = ledger:opsForLifecycle('state')
-    if stateOps ~= nil then
-      for opId in pairs(stateOps) do
-        local op = ledger:getOp(opId)
-        if op ~= nil and op.parentOpId == nil and (op.state == 'applied' or op.state == 'pending') then
-          local actionInManifest = manifest.actionsById[op.actionId] ~= nil
-          local ownerInManifest = op.ownerId ~= nil and manifest.ownersById[op.ownerId] ~= nil
-          if not actionInManifest or not ownerInManifest then
-            -- Stale op from previous manifest (e.g. startup_plan_change_restart).
-            markRevert(op, 0)
-          else
-            local truth = guards.truth(op.ownerId)
-            if truth == 'inactive' then
-              markRevert(op, 0)
-            elseif truth == 'active' and winningSemantics[op.semanticId] == nil then
-              -- Only revert if the op's cell is currently observed (don't revert ops in unloaded cells!).
-              if op.cellKey == nil or session.world.getObservedCell(op.cellKey) ~= nil then
-                markRevert(op, 0)
-              end
-            end
-          end
+    local function checkCleanupOp(op)
+      if op == nil or op.lifecycle ~= 'state' or op.parentOpId ~= nil
+          or (op.state ~= 'applied' and op.state ~= 'pending') then
+        return
+      end
+      local actionInManifest = manifest.actionsById[op.actionId] ~= nil
+      local ownerInManifest = op.ownerId ~= nil and manifest.ownersById[op.ownerId] ~= nil
+      if not actionInManifest or not ownerInManifest then
+        markRevert(op, 0)
+        return
+      end
+      local truth = guards.truth(op.ownerId)
+      if truth == 'inactive' then
+        markRevert(op, 0)
+      elseif truth == 'active' and (fullScan or arbitratedExisting[op.id])
+          and winningSemantics[op.semanticId] == nil then
+        if op.cellKey == nil or session.world.getObservedCell(op.cellKey) ~= nil then
+          markRevert(op, 0)
         end
+      end
+    end
+
+    if fullScan then
+      local stateOps = ledger:opsForLifecycle('state')
+      if stateOps ~= nil then
+        for opId in pairs(stateOps) do checkCleanupOp(ledger:getOp(opId)) end
+      end
+    else
+      for ownerId in pairs(scopedOwners) do
+        local ops = ledger:opsForOwner(ownerId)
+        if ops ~= nil then
+          for opId in pairs(ops) do checkCleanupOp(ledger:getOp(opId)) end
+        end
+      end
+      for opId in pairs(arbitratedExisting) do
+        checkCleanupOp(ledger:getOp(opId))
       end
     end
 
     local orderedCleanups = arbiter.orderCleanups(cleanupList)
     local hitBudget = false
+    local revertedCells = {}
+    local revertedGlobal = false
     for i = 1, #orderedCleanups do
       if counter.mutations >= budgets.mutationLimit then
         hitBudget = true
@@ -1097,11 +1199,15 @@ function M.new(opts)
       end
       local entry = orderedCleanups[i]
       if ledger:getOp(entry.op.id) ~= nil then
-        -- Wait if any descendant still exists (e.g. pending revert).
         local stillHasChildren = ledger:opsForParent(entry.op.id) ~= nil
         if not stillHasChildren then
           executor.revert(entry.op, frame)
           counter.mutations = counter.mutations + 1
+          if entry.op.cellKey ~= nil then
+            revertedCells[entry.op.cellKey] = true
+          else
+            revertedGlobal = true
+          end
         end
       end
     end
@@ -1116,7 +1222,6 @@ function M.new(opts)
           appliedParents[#appliedParents + 1] = existing
         end
       else
-        -- Ensure state claims are genuinely free right now (in case a loser is still pending revert).
         local blockedNow = false
         for j = 1, #(w.claims or {}) do
           if ledger:claimOwner('state', w.targetId, w.claims[j]) ~= nil then
@@ -1144,7 +1249,12 @@ function M.new(opts)
     end
 
     if not hitBudget and not anyFenced then
-      stateDirty = false
+      stateDirtyAll = revertedGlobal
+      dirtyOwners = {}
+      dirtyStateCells = revertedCells
+    else
+      for k in pairs(revertedCells) do dirtyStateCells[k] = true end
+      if revertedGlobal then stateDirtyAll = true end
     end
   end
 
@@ -1234,17 +1344,39 @@ function M.new(opts)
   function rec.enqueueCell(cellKey)
     if type(cellKey) ~= 'string' or cellKey == '' then return end
     staticQueue[cellKey] = true
-    stateDirty = true
+    dirtyStateCells[cellKey] = true
+    ledger:wakePendingReverts()
+  end
+
+  function rec.onCellsUnloaded(cellKeys)
+    for i = 1, #(cellKeys or {}) do
+      local k = cellKeys[i]
+      staticPlanCache[k] = nil
+      doorOriginsCaptured[k] = nil
+      staticSettled[k] = nil
+      staticQueue[k] = nil
+      dirtyStateCells[k] = nil
+    end
   end
 
   function rec.observeActiveObject(object, cellKey)
     if object == nil or type(cellKey) ~= 'string' or cellKey == '' then return end
     pendingActiveObjects[#pendingActiveObjects + 1] = {ref = object, cellKey = cellKey}
-    stateDirty = true
+    dirtyStateCells[cellKey] = true
+    ledger:wakePendingReverts()
   end
 
   function rec.markStateDirty()
-    stateDirty = true
+    stateDirtyAll = true
+  end
+
+  function rec.markOwnersDirty(ownerIds)
+    for i = 1, #(ownerIds or {}) do
+      local id = ownerIds[i]
+      if type(id) == 'string' and id ~= '' then
+        dirtyOwners[id] = true
+      end
+    end
   end
 
   function rec.step(frame)
@@ -1260,24 +1392,36 @@ function M.new(opts)
       if counter.pending >= budgets.pendingLimit then break end
       local op = ledger:getOp(duePending[i])
       if op ~= nil then
+        local opLifecycle = op.lifecycle
+        local opOwnerId = op.ownerId
+        local opCellKey = op.cellKey
         local status = executor.advancePending(op, frame)
         counter.pending = counter.pending + 1
         if status == 'applied' or status == 'reverted' or status == 'noop' then
-          stateDirty = true
-          if op.lifecycle == 'static' and op.cellKey ~= nil then
-            staticQueue[op.cellKey] = true
+          if opLifecycle == 'static' and opCellKey ~= nil then
+            staticQueue[opCellKey] = true
+          end
+          if opOwnerId ~= nil then dirtyOwners[opOwnerId] = true end
+          if opCellKey ~= nil then
+            dirtyStateCells[opCellKey] = true
+          else
+            stateDirtyAll = true
           end
         end
       end
     end
 
-    -- 2. Reconcile queued static cells (per-cell fence!).
+    -- 2. Reconcile queued static cells (per-cell fence + cell/mutation/discovery budgets).
     local cells = {}
     for key in pairs(staticQueue) do cells[#cells + 1] = key end
     table.sort(cells)
     local cellsDone = 0
     for i = 1, #cells do
-      if cellsDone >= budgets.cellLimit or counter.mutations >= budgets.mutationLimit then break end
+      if cellsDone >= budgets.cellLimit
+          or counter.mutations >= budgets.mutationLimit
+          or counter.discovery >= budgets.discoveryLimit then
+        break
+      end
       reconcileStaticCell(cells[i], frame, counter)
       cellsDone = cellsDone + 1
     end
@@ -1287,8 +1431,8 @@ function M.new(opts)
       reconcileActiveObjects(frame, counter)
     end
 
-    -- 3. Reconcile state ops if dirty.
-    if stateDirty and counter.mutations < budgets.mutationLimit then
+    -- 3. Reconcile state ops if dirty (scoped to dirty owners & cells unless full scan).
+    if hasStateWork() and counter.mutations < budgets.mutationLimit then
       reconcileState(frame, counter)
     end
 
@@ -1310,58 +1454,73 @@ function M.new(opts)
 
     local opFilter = type(options) == 'table' and type(options.operation) == 'table' and options.operation or nil
     local opWorkCount, opWorkSamples = 0, {}
-    local statusSet = nil
-    if opFilter ~= nil and type(opFilter.statuses) == 'table' then
-      statusSet = {}
-      for i = 1, #opFilter.statuses do statusSet[opFilter.statuses[i]] = true end
+    local function sampleRow(op)
+      return {
+        producerId = op.producerId,
+        semanticId = op.semanticId,
+        ownerId = op.ownerId,
+        actionId = op.actionId,
+        family = op.family,
+        lifecycle = op.lifecycle,
+        durability = op.durability,
+        status = op.state,
+        phase = op.pending and op.pending.phase or nil,
+        nextFrame = op.pending and op.pending.nextFrame or nil,
+      }
     end
-    local wantRecordId = opFilter and lower(opFilter.targetRecordId) or nil
-    local opIds = {}
-    for opId in pairs(ledger.doc.ops) do opIds[#opIds + 1] = opId end
-    table.sort(opIds)
-    for i = 1, #opIds do
-      local op = ledger.doc.ops[opIds[i]]
-      local ok = true
-      if opFilter ~= nil then
-        if opFilter.family ~= nil and op.family ~= opFilter.family then ok = false end
-        if ok and statusSet ~= nil and not statusSet[op.state] then ok = false end
-        if ok and opFilter.targetKind ~= nil then
-          local isCell = op.targetId:sub(1, 5) == 'cell:'
-          local isOutput = op.targetId:sub(1, 7) == 'output:'
-          if opFilter.targetKind == 'cell' and not isCell then ok = false
-          elseif opFilter.targetKind == 'output' and not isOutput then ok = false
-          elseif opFilter.targetKind == 'ref' and isCell then ok = false
-          end
-        end
-        if ok and wantRecordId ~= nil then
-          local recId = lower(op.targetRecordId)
-          if recId == nil then
-            local storedRef = ledger:getRef(op.targetId)
-            recId = storedRef and lower(storedRef.recordId) or nil
-          end
-          if recId == nil and op.targetId:sub(1, 5) ~= 'cell:' then
-            local live = session.world.resolveTarget(op.targetId, ledger)
-            local facts = live and session.world.describeRef(live, ledger) or nil
-            recId = facts and lower(facts.recordId) or nil
-          end
-          if recId ~= wantRecordId then ok = false end
-        end
+
+    local liveCount = ledger:opCount()
+    if opFilter == nil and liveCount > 64 then
+      -- O(1) bounded sampling for large ledgers when no filter is requested.
+      opWorkCount = liveCount
+      for _, op in pairs(ledger.doc.ops) do
+        opWorkSamples[#opWorkSamples + 1] = sampleRow(op)
+        if #opWorkSamples >= 32 then break end
       end
-      if ok then
-        opWorkCount = opWorkCount + 1
-        if #opWorkSamples < 32 then
-          opWorkSamples[#opWorkSamples + 1] = {
-            producerId = op.producerId,
-            semanticId = op.semanticId,
-            ownerId = op.ownerId,
-            actionId = op.actionId,
-            family = op.family,
-            lifecycle = op.lifecycle,
-            durability = op.durability,
-            status = op.state,
-            phase = op.pending and op.pending.phase or nil,
-            nextFrame = op.pending and op.pending.nextFrame or nil,
-          }
+      table.sort(opWorkSamples, function(a, b) return tostring(a.producerId) < tostring(b.producerId) end)
+    else
+      local statusSet = nil
+      if opFilter ~= nil and type(opFilter.statuses) == 'table' then
+        statusSet = {}
+        for i = 1, #opFilter.statuses do statusSet[opFilter.statuses[i]] = true end
+      end
+      local wantRecordId = opFilter and lower(opFilter.targetRecordId) or nil
+      local opIds = {}
+      for opId in pairs(ledger.doc.ops) do opIds[#opIds + 1] = opId end
+      table.sort(opIds)
+      for i = 1, #opIds do
+        local op = ledger.doc.ops[opIds[i]]
+        local ok = true
+        if opFilter ~= nil then
+          if opFilter.family ~= nil and op.family ~= opFilter.family then ok = false end
+          if ok and statusSet ~= nil and not statusSet[op.state] then ok = false end
+          if ok and opFilter.targetKind ~= nil then
+            local isCell = op.targetId:sub(1, 5) == 'cell:'
+            local isOutput = op.targetId:sub(1, 7) == 'output:'
+            if opFilter.targetKind == 'cell' and not isCell then ok = false
+            elseif opFilter.targetKind == 'output' and not isOutput then ok = false
+            elseif opFilter.targetKind == 'ref' and isCell then ok = false
+            end
+          end
+          if ok and wantRecordId ~= nil then
+            local recId = lower(op.targetRecordId)
+            if recId == nil then
+              local storedRef = ledger:getRef(op.targetId)
+              recId = storedRef and lower(storedRef.recordId) or nil
+            end
+            if recId == nil and op.targetId:sub(1, 5) ~= 'cell:' then
+              local live = session.world.resolveTarget(op.targetId, ledger)
+              local facts = live and session.world.describeRef(live, ledger) or nil
+              recId = facts and lower(facts.recordId) or nil
+            end
+            if recId ~= wantRecordId then ok = false end
+          end
+        end
+        if ok then
+          opWorkCount = opWorkCount + 1
+          if #opWorkSamples < 32 then
+            opWorkSamples[#opWorkSamples + 1] = sampleRow(op)
+          end
         end
       end
     end

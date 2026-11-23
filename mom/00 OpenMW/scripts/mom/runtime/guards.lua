@@ -4,6 +4,7 @@
 local M = {}
 
 local deadline_queue = require('scripts.mom.common.deadline_queue')
+local plain_data = require('scripts.mom.contracts.plain_data')
 local strings = require('scripts.mom.common.strings')
 
 local VALID_STATES = {active = true, inactive = true, unknown = true}
@@ -31,13 +32,15 @@ local function prepareOwnerGuard(owner, guardRegistry)
       family = frag.family,
       evaluate = evaluate,
       program = frag.program,
+      isolateProgram = nonEmpty(entry.module.providerInterface),
     }
   end
   return {op = 'all', fragments = fragments}, nil
 end
 
 local function evalFragment(frag, capabilities)
-  local ok, res = pcall(frag.evaluate, frag.program, capabilities)
+  local program = frag.isolateProgram and plain_data.cloneValidated(frag.program) or frag.program
+  local ok, res = pcall(frag.evaluate, program, capabilities)
   if not ok then
     return 'unknown', 'guard evaluator failed: ' .. tostring(res)
   end
@@ -80,6 +83,8 @@ function M.new(manifest, guardRegistry, opts)
   local byEvent = {}           -- eventName -> { ownerId, ... }
   local watchTime = false
   local watchWeather = false
+  local watchedWeatherRegions = nil -- true (broad) or { [regionKey] = true }
+  local unknownSet = {}        -- ownerId -> true (currently unknown truth)
 
   local function subscribe(eventName, ownerId)
     local list = byEvent[eventName]
@@ -101,13 +106,22 @@ function M.new(manifest, guardRegistry, opts)
       reason = 'not evaluated yet',
       evaluated = false,
     }
+    unknownSet[ownerId] = true
     dirtySet[ownerId] = true
     for _, sub in ipairs(ownerSpec.subscriptions or {}) do
       subscribe(sub, ownerId)
       if sub == 'timeHourChanged' or sub == 'timeDayChanged' then
         watchTime = true
-      elseif sub == 'weatherChanged' or sub:sub(1, 15) == 'weatherChanged:' then
+      elseif sub == 'weatherChanged' then
         watchWeather = true
+        watchedWeatherRegions = true
+      elseif sub:sub(1, 15) == 'weatherChanged:' then
+        watchWeather = true
+        if watchedWeatherRegions ~= true then
+          watchedWeatherRegions = watchedWeatherRegions or {}
+          local regionKey = strings.lowerString(sub:sub(16))
+          if regionKey ~= nil then watchedWeatherRegions[regionKey] = true end
+        end
       end
     end
   end
@@ -115,6 +129,7 @@ function M.new(manifest, guardRegistry, opts)
   local mgr = {
     watchTime = watchTime,
     watchWeather = watchWeather,
+    watchedWeatherRegions = watchedWeatherRegions,
   }
 
   function mgr.markDirty(ownerId)
@@ -198,8 +213,10 @@ function M.new(manifest, guardRegistry, opts)
       owner.reason = reason
       owner.evaluated = true
       if nextTruth == 'unknown' then
+        unknownSet[ownerId] = true
         deadline_queue.upsert(retryQueue, ownerId, frame + retryDelay)
       else
+        unknownSet[ownerId] = nil
         deadline_queue.remove(retryQueue, ownerId)
       end
       if (not wasEval) or nextTruth ~= prevTruth then
@@ -214,11 +231,13 @@ function M.new(manifest, guardRegistry, opts)
     return owner and owner.truth or 'inactive'
   end
 
+  function mgr.unknownOwners()
+    return unknownSet
+  end
+
   function mgr.unknownCount()
     local n = 0
-    for _, owner in pairs(owners) do
-      if owner.truth == 'unknown' then n = n + 1 end
-    end
+    for _ in pairs(unknownSet) do n = n + 1 end
     return n
   end
 

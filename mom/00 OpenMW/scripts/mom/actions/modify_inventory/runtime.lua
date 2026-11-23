@@ -239,13 +239,24 @@ function M.apply(_program, target, token, ctx)
       autoEquipList[#autoEquipList + 1] = recId
     end
   end
+  local function failWithRollback(err)
+    for j = #added, 1, -1 do
+      local rec = added[j]
+      pcall(invOps.removeItems, inv, rec.recordId, rec.count, rec.variantKey)
+    end
+    for j = #removed, 1, -1 do
+      local rec = removed[j]
+      pcall(invOps.addItems, inv, rec.recordId, rec.count, rec.data)
+    end
+    return {status = 'failed', changedClaims = {}, message = tostring(err)}
+  end
 
   for i = 1, #token.ops do
     local entry = token.ops[i]
     local op = entry.op
     if op == 'remove' then
       local rem, err = invOps.removeItems(inv, entry.sourceRecordId, entry.limit)
-      if rem == nil then return {status = 'failed', changedClaims = claimList(), message = tostring(err)} end
+      if rem == nil then return failWithRollback(err) end
       for j = 1, #rem do
         removed[#removed + 1] = rem[j]
         mark('ref.inventory')
@@ -256,7 +267,7 @@ function M.apply(_program, target, token, ctx)
     elseif op == 'replace' then
       local wasEquipped = isActor and isEquipped(currentEquip, entry.sourceRecordId)
       local rem, err = invOps.removeItems(inv, entry.sourceRecordId, nil)
-      if rem == nil then return {status = 'failed', changedClaims = claimList(), message = tostring(err)} end
+      if rem == nil then return failWithRollback(err) end
       local totalReplaced = 0
       for j = 1, #rem do
         removed[#removed + 1] = rem[j]
@@ -265,7 +276,7 @@ function M.apply(_program, target, token, ctx)
       end
       if totalReplaced > 0 then
         local receipt, addErr = invOps.addItems(inv, entry.targetRecordId, totalReplaced)
-        if receipt == nil then return {status = 'failed', changedClaims = claimList(), message = tostring(addErr)} end
+        if receipt == nil then return failWithRollback(addErr) end
         added[#added + 1] = receipt
         mark('ref.inventory')
         if isActor and (entry.equip == true or wasEquipped) then
@@ -275,7 +286,7 @@ function M.apply(_program, target, token, ctx)
       end
     elseif op == 'add' then
       local receipt, addErr = invOps.addItems(inv, entry.sourceRecordId, entry.count)
-      if receipt == nil then return {status = 'failed', changedClaims = claimList(), message = tostring(addErr)} end
+      if receipt == nil then return failWithRollback(addErr) end
       added[#added + 1] = receipt
       mark('ref.inventory')
       if isActor and entry.equip == true then
@@ -284,11 +295,11 @@ function M.apply(_program, target, token, ctx)
       end
     elseif op == 'ensure' then
       local existingCount, cntErr = countRecord(invOps, inv, entry.sourceRecordId)
-      if existingCount == nil then return {status = 'failed', changedClaims = claimList(), message = tostring(cntErr)} end
+      if existingCount == nil then return failWithRollback(cntErr) end
       if existingCount < entry.count then
         local deficit = entry.count - existingCount
         local receipt, addErr = invOps.addItems(inv, entry.sourceRecordId, deficit)
-        if receipt == nil then return {status = 'failed', changedClaims = claimList(), message = tostring(addErr)} end
+        if receipt == nil then return failWithRollback(addErr) end
         added[#added + 1] = receipt
         mark('ref.inventory')
       end
@@ -308,7 +319,7 @@ function M.apply(_program, target, token, ctx)
     elseif op == 'equip' then
       if isActor and not isEquipped(currentEquip, entry.sourceRecordId) then
         local count, cntErr = countRecord(invOps, inv, entry.sourceRecordId)
-        if count == nil then return {status = 'failed', changedClaims = claimList(), message = tostring(cntErr)} end
+        if count == nil then return failWithRollback(cntErr) end
         if count > 0 then
           token.equipmentChanged = true
           mark('ref.inventory')

@@ -202,6 +202,12 @@ local function validateOp(op, key, errors)
   if type(op.claims) ~= 'table' then
     errors[#errors + 1] = 'ops.' .. tostring(key) .. '.claims: expected array'
   end
+  for _, vField in ipairs({'familyAbiVersion', 'behaviorVersion', 'programVersion', 'revertTokenVersion'}) do
+    local v = op[vField]
+    if v ~= nil and (type(v) ~= 'number' or v < 0 or v % 1 ~= 0) then
+      errors[#errors + 1] = 'ops.' .. tostring(key) .. '.' .. vField .. ': expected non-negative integer'
+    end
+  end
   return #errors == 0
 end
 
@@ -241,18 +247,19 @@ end
 local Ledger = {}
 Ledger.__index = Ledger
 
-local function wrap(doc)
+local function wrap(doc, dirty)
   local idx = emptyIndexes()
   for _, op in pairs(doc.ops) do indexOp(idx, op) end
   for _, ref in pairs(doc.refs) do indexRef(idx, ref) end
   return setmetatable({
     doc = doc,
     idx = idx,
+    dirty = dirty == true,
   }, Ledger)
 end
 
 function M.new()
-  return wrap(emptyDoc())
+  return wrap(emptyDoc(), false)
 end
 
 -- Decodes an OpenMW onLoad payload in one pass without full-ledger cloning.
@@ -311,7 +318,10 @@ function Ledger:manifestHash()
 end
 
 function Ledger:setManifestHash(hash)
-  self.doc.manifestHash = hash
+  if self.doc.manifestHash ~= hash then
+    self.doc.manifestHash = hash
+    self.dirty = true
+  end
 end
 
 function Ledger:getOp(opId)
@@ -337,6 +347,7 @@ function Ledger:putOp(op)
   op.producerId = op.producerId or op.id
   self.doc.ops[op.id] = op
   indexOp(self.idx, op)
+  self.dirty = true
   return op
 end
 
@@ -352,6 +363,7 @@ function Ledger:updateOp(opId, patch)
     end
   end
   indexOp(self.idx, op)
+  self.dirty = true
   return op
 end
 
@@ -360,6 +372,7 @@ function Ledger:deleteOp(opId)
   if op == nil then return false end
   unindexOp(self.idx, op)
   self.doc.ops[opId] = nil
+  self.dirty = true
   return true
 end
 
@@ -431,6 +444,7 @@ function Ledger:putRef(ref)
   if existing ~= nil then unindexRef(self.idx, existing) end
   self.doc.refs[ref.id] = ref
   indexRef(self.idx, ref)
+  self.dirty = true
   return ref
 end
 
@@ -439,6 +453,7 @@ function Ledger:deleteRef(refId)
   if existing == nil then return false end
   unindexRef(self.idx, existing)
   self.doc.refs[refId] = nil
+  self.dirty = true
   return true
 end
 
@@ -448,6 +463,7 @@ end
 
 function Ledger:setStaticScan(cellKey, entry)
   self.doc.staticScans[cellKey] = entry
+  self.dirty = true
 end
 
 function Ledger:getVariant(variantKey)
@@ -456,6 +472,24 @@ end
 
 function Ledger:setVariant(variantKey, entry)
   self.doc.variants[variantKey] = entry
+  self.dirty = true
+end
+
+-- Wakes any reverting ops backed off in `await-target` so newly loaded cells
+-- trigger deferred cleanup on the very next tick.
+function Ledger:wakePendingReverts()
+  local woke = 0
+  for opId in pairs(self.idx.pendingOps) do
+    local op = self.doc.ops[opId]
+    if op ~= nil and op.state == 'reverting'
+        and type(op.pending) == 'table' and op.pending.phase == 'await-target' then
+      op.pending.nextFrame = 0
+      op.pending.delay = 1
+      self.idx.pendingOps[opId] = 0
+      woke = woke + 1
+    end
+  end
+  return woke
 end
 
 function Ledger:opCount()
@@ -485,7 +519,10 @@ function Ledger:audit()
 end
 
 function Ledger:save()
-  compactor.compact(self)
+  if self.dirty then
+    compactor.compact(self)
+    self.dirty = false
+  end
   return self.doc, {status = 'saved'}
 end
 

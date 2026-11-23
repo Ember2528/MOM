@@ -251,12 +251,23 @@ function M.apply(_program, target, token, ctx)
   local ledger = ctx.ledger
 
   local outputs = {}
+  local spawned = {}
+  local function rollbackSpawned(message)
+    for j = #spawned, 1, -1 do
+      local item = spawned[j]
+      pcall(placeOps.removeObject, item.ref)
+      world.unregisterLiveOutput(item.outputId)
+      ledger:deleteRef(item.outputId)
+    end
+    return {status = 'failed', changedClaims = {}, outputs = {}, message = tostring(message)}
+  end
+
   for i = 1, #token.slots do
     local slot = token.slots[i]
     if slot.typeName == 'Creature' and slot.targetKind == 'model_path' then
       local okElig, eligErr = placeOps.creatureEligible(target)
       if okElig ~= true then
-        return {status = 'failed', changedClaims = {}, outputs = outputs, message = tostring(eligErr)}
+        return rollbackSpawned(eligErr)
       end
     end
 
@@ -268,13 +279,13 @@ function M.apply(_program, target, token, ctx)
         slot.typeName, target, slot.sourceRecordId, slot.targetValue, ledger
       )
       if actualRecordId == nil then
-        return {status = 'failed', changedClaims = {}, outputs = outputs, message = tostring(vErr)}
+        return rollbackSpawned(vErr)
       end
     end
 
     local created, createErr = placeOps.createObject(actualRecordId, slot)
     if created == nil then
-      return {status = 'failed', changedClaims = {}, outputs = outputs, message = tostring(createErr)}
+      return rollbackSpawned(createErr)
     end
 
     slot.objectId = created.objectId
@@ -295,6 +306,7 @@ function M.apply(_program, target, token, ctx)
       slot = slot.slot,
       variantKey = variantKey,
     })
+    spawned[#spawned + 1] = {outputId = slot.outputId, ref = created.ref}
     outputs[#outputs + 1] = slot.outputId
   end
 

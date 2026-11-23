@@ -25,6 +25,25 @@ local function appendUniqueCells(dst, src)
   return dst
 end
 
+local function nextAwaitDelay(prevDelay)
+  if prevDelay == nil or prevDelay < 1 then return 1 end
+  if prevDelay < 5 then return 5 end
+  if prevDelay < 15 then return 15 end
+  if prevDelay < 60 then return 60 end
+  return 120
+end
+
+local function opVersions(action, mod)
+  local abi = action.familyAbiVersion
+  if abi == nil and type(mod) == 'table' then abi = mod.abiVersion end
+  local behavior = action.behaviorVersion
+  if behavior == nil and type(mod) == 'table' then behavior = mod.behaviorVersion end
+  local prog = action.programVersion
+  if prog == nil and type(mod) == 'table' then prog = mod.programVersion end
+  local rev = action.reversible == true and type(mod) == 'table' and mod.revertTokenVersion or nil
+  return abi, behavior, prog, rev
+end
+
 function M.new(opts)
   local ledger = assert(opts.ledger, 'executor requires ledger')
   local session = assert(opts.session, 'executor requires session')
@@ -131,11 +150,16 @@ function M.new(opts)
     local recoveryCells = res.recoveryCells or (type(token) == 'table' and token.recoveryCells or nil)
     persistRecoveryCellsOnRef(candidate.targetId, recoveryCells)
 
+    local abiVer, behVer, progVer, revVer = opVersions(action, mod)
     local op = ledger:putOp({
       id = opId,
       producerId = opId,
       semanticId = candidate.semanticId,
       family = action.family,
+      familyAbiVersion = abiVer,
+      behaviorVersion = behVer,
+      programVersion = progVer,
+      revertTokenVersion = revVer,
       actionId = action.id,
       ownerId = action.ownerId,
       lifecycle = action.lifecycle,
@@ -203,10 +227,13 @@ function M.new(opts)
       target = session.world.resolveTarget(op.targetId, ledger)
     end
     if target == nil then
-      -- Defer revert until the target cell/object is loaded.
+      -- Defer revert with bounded exponential backoff; cell entry / active-object
+      -- events wake await-target reverts immediately via ledger:wakePendingReverts().
+      local prevDelay = type(op.pending) == 'table' and op.pending.delay or nil
+      local delay = nextAwaitDelay(prevDelay)
       ledger:updateOp(op.id, {
         state = 'reverting',
-        pending = {phase = 'await-target', nextFrame = frame + 1},
+        pending = {phase = 'await-target', delay = delay, nextFrame = frame + delay},
       })
       return {status = 'pending'}
     end
@@ -275,11 +302,16 @@ function M.new(opts)
     local recoveryCells = res.recoveryCells or (type(nextToken) == 'table' and nextToken.recoveryCells or nil)
     persistRecoveryCellsOnRef(candidate.targetId, recoveryCells)
 
+    local abiVer, behVer, progVer, revVer = opVersions(action, mod)
     local op = ledger:putOp({
       id = opId,
       producerId = opId,
       semanticId = candidate.semanticId,
       family = action.family,
+      familyAbiVersion = abiVer,
+      behaviorVersion = behVer,
+      programVersion = progVer,
+      revertTokenVersion = revVer,
       actionId = action.id,
       ownerId = action.ownerId,
       lifecycle = action.lifecycle,
@@ -375,6 +407,7 @@ function M.new(opts)
       and session.world.resolveCell(op.targetId:sub(6))
       or session.world.resolveTarget(op.targetId, ledger)
     if target == nil then
+      local delay = nextAwaitDelay(pending and pending.delay or nil)
       ledger:updateOp(op.id, {
         pending = {
           phase = pending and pending.phase or 'await-target',
@@ -382,7 +415,8 @@ function M.new(opts)
           changes = pending and pending.changes,
           attempts = pending and pending.attempts,
           changedClaims = pending and pending.changedClaims,
-          nextFrame = frame + 1,
+          delay = delay,
+          nextFrame = frame + delay,
         },
       })
       return 'waiting'

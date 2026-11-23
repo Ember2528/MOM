@@ -199,12 +199,42 @@ local function stressLedger1000OpsRoundtrip()
     'post-delete 500-op ledger failed audit')
 end
 
+local function dirtySaveCompactionAndWakePendingReverts()
+  local l = ledger_api.new()
+  l:setManifestHash('mh:live')
+  l:setStaticScan('cell_old', {planHash = 'p0', manifestHash = 'mh:stale'})
+  expect(l.dirty == true, 'setStaticScan did not mark ledger dirty')
+  l:save()
+  expect(l.dirty == false and l:getStaticScan('cell_old') == nil,
+    'first dirty save did not compact stale scan and clear dirty flag')
+
+  -- Mutating doc directly without setting dirty demonstrates clean save skips compaction.
+  l.doc.staticScans.cell_probe = {planHash = 'p0', manifestHash = 'mh:stale'}
+  l:save()
+  expect(l.doc.staticScans.cell_probe ~= nil, 'clean save unnecessarily re-ran compactor')
+  l:setStaticScan('cell_keep', {planHash = 'p1', manifestHash = 'mh:live'})
+  l:save()
+  expect(l.doc.staticScans.cell_probe == nil and l:getStaticScan('cell_keep') ~= nil,
+    'subsequent dirty save did not compact stale scans')
+
+  local revId = l:nextOpId()
+  l:putOp(makeOp(revId, {
+    state = 'reverting',
+    pending = {phase = 'await-target', delay = 120, nextFrame = 500},
+  }))
+  expect(l:pendingOps()[revId] == 500, 'backed-off reverting op nextFrame mismatch')
+  expect(l:wakePendingReverts() == 1 and l:pendingOps()[revId] == 0
+      and l:getOp(revId).pending.delay == 1,
+    'wakePendingReverts did not immediately wake await-target reverting op')
+end
+
 function M.run()
   return test_support.runCases('ledger v1', {
     {'schema v1 roundtrip and legacy v0 reset', schemaV1RoundtripAndReset},
     {'lifecycle claim isolation and output.existence exclusion', lifecycleClaimsAndExistenceExclusion},
     {'pending parent and recovery cell indexes', pendingParentAndRecoveryIndexes},
     {'compactor prunes dead refs variants and scans', compactorPrunesDeadRefsVariantsAndScans},
+    {'dirty save compaction gate and pending revert wake', dirtySaveCompactionAndWakePendingReverts},
     {'stress 1000-op save load and index maintenance', stressLedger1000OpsRoundtrip, {stress = true}},
   })
 end

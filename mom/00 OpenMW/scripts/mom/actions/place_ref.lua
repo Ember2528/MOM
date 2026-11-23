@@ -57,6 +57,10 @@ function M.resolveBehavior(spec)
   return behavior
 end
 
+function M.acceptsGeneratedRoot(program)
+  return not (type(program) == 'table' and program.mode == 'relative')
+end
+
 return lazy_hooks.bind(M, 'scripts.mom.actions.place_ref.runtime', {
   matchesTarget = true, capture = true, apply = true, revert = true,
   advance = true, prepareTransition = true,

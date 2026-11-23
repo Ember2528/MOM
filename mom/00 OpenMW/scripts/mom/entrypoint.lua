@@ -218,7 +218,7 @@ function M.new(opts)
       onInit = function() return initialize(nil, false) end,
       onLoad = function(savedData) return initialize(savedData, true) end,
       onUpdate = function()
-        if app.runtime == nil then return end
+        if app.runtime == nil or app.dormant == true then return end
         callback('runtime_tick', appApi.tick)
       end,
       onSave = function()
@@ -234,10 +234,14 @@ function M.new(opts)
         return payload
       end,
       onObjectActive = function(object)
-        if app.runtime ~= nil then callback('object_observation', appApi.observeObject, object) end
+        if app.runtime ~= nil and app.dormant ~= true then
+          callback('object_observation', appApi.observeObject, object)
+        end
       end,
       onNewExterior = function(cell)
-        if app.runtime ~= nil then callback('cell_observation', appApi.observeCell, cell) end
+        if app.runtime ~= nil and app.dormant ~= true then
+          callback('cell_observation', appApi.observeCell, cell)
+        end
       end,
     },
     eventHandlers = {

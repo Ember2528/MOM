@@ -93,15 +93,17 @@ function M.new(deps, worldAdapter)
     return cachedTime, cachedTimeErr
   end
 
-  local function scanObservedWeather()
+  local function scanObservedWeather(watchedRegions)
     if not (core and openmw_api.isNamespace(core.weather)) then
       return {}, false
     end
+    local filterTable = type(watchedRegions) == 'table' and watchedRegions or nil
     local nextMap = {}
     for _, entry in pairs(worldAdapter.observedCells()) do
       local facts = entry.facts
       local regionKey = facts and facts.regionKey
-      if regionKey ~= nil and (facts.isExterior == true or facts.hasSky == true) then
+      if regionKey ~= nil and (facts.isExterior == true or facts.hasSky == true)
+          and (filterTable == nil or filterTable[regionKey] == true) then
         local cell = entry.handle
         local nextW, nextErr = call(core.weather.getNext, cell)
         local curW, curErr = call(core.weather.getCurrent, cell)
@@ -224,9 +226,10 @@ function M.new(deps, worldAdapter)
     return value, nil
   end
 
-  -- Polls time hour/day changes and observed-cell weather changes.
+  -- Polls time hour/day changes and observed-cell weather changes (filtered to
+  -- subscribed regions when `watchedWeatherRegions` is a set table).
   -- Returns a list of event names to dispatch to subscribed guard owners.
-  function reads.poll(frame, watchTime, watchWeather)
+  function reads.poll(frame, watchTime, watchWeather, watchedWeatherRegions)
     reads.beginFrame(frame)
     local events = {}
     if watchTime then
@@ -244,7 +247,7 @@ function M.new(deps, worldAdapter)
       lastTimeMarker = marker
     end
     if watchWeather then
-      local nextMap, ok = scanObservedWeather()
+      local nextMap, ok = scanObservedWeather(watchedWeatherRegions)
       if ok then
         local anyChanged = false
         local changedRegions = {}

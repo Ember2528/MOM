@@ -6,38 +6,60 @@ function M.apply(source, output, ctx)
   local invOps = ctx.inventoryOps
   local refOps = ctx.refOps
 
+  -- Read & resolve source BEFORE touching output so unreadable or restocking
+  -- source inventories fail cleanly with zero world mutations.
   local lock, lockErr = refOps.readLock(source)
   if lock == nil then return nil, lockErr end
-
-  local okHideOut, hideOutErr = refOps.setEnabled(output, false)
-  if not okHideOut then return nil, hideOutErr end
-
-  local outInv, _, outInvErr = invOps.getInventory(output)
-  if outInv == nil then return nil, outInvErr end
-  local okResOut, resOutErr = invOps.ensureResolved(outInv)
-  if not okResOut then return nil, resOutErr end
-
-  -- Clear default leveled/static items from the newly created output container.
-  local okClear, clearErr = invOps.clearInventory(outInv, false)
-  if not okClear then return nil, clearErr end
 
   local srcInv, _, srcInvErr = invOps.getInventory(source)
   if srcInv == nil then return nil, srcInvErr end
   local okResSrc, resSrcErr = invOps.ensureResolved(srcInv)
   if not okResSrc then return nil, resSrcErr end
 
+  if type(invOps.listItems) == 'function' then
+    local srcStacks, listErr = invOps.listItems(srcInv, nil)
+    if srcStacks == nil then return nil, listErr end
+    for i = 1, #srcStacks do
+      if srcStacks[i].restocking then
+        return nil, 'restocking container items cannot be transferred'
+      end
+    end
+  end
+
+  local outInv, _, outInvErr = invOps.getInventory(output)
+  if outInv == nil then return nil, outInvErr end
+  local okResOut, resOutErr = invOps.ensureResolved(outInv)
+  if not okResOut then return nil, resOutErr end
+
+  local okHideOut, hideOutErr = refOps.setEnabled(output, false)
+  if not okHideOut then return nil, hideOutErr end
+
+  -- Clear default leveled/static items from the newly created output container.
+  local okClear, clearErr = invOps.clearInventory(outInv, false)
+  if not okClear then return nil, clearErr end
+
   -- Move all live source items synchronously into output (rejecting restocking).
   local okMove, moveErr = invOps.moveAllItems(srcInv, outInv, true)
-  if not okMove then return nil, moveErr end
+  if not okMove then
+    pcall(invOps.moveAllItems, outInv, srcInv, false)
+    return nil, moveErr
+  end
+
+  local function rollbackAfterMove(err)
+    pcall(refOps.setEnabled, output, false)
+    pcall(invOps.moveAllItems, outInv, srcInv, false)
+    pcall(refOps.setEnabled, source, true)
+    return nil, err
+  end
 
   local okLock, writeLockErr = refOps.writeLock(output, lock)
-  if not okLock then return nil, writeLockErr end
+  if not okLock then return rollbackAfterMove(writeLockErr) end
 
   local okHideSrc, hideSrcErr = refOps.setEnabled(source, false)
-  if not okHideSrc then return nil, hideSrcErr end
+  if not okHideSrc then return rollbackAfterMove(hideSrcErr) end
 
   local okShowOut, showOutErr = refOps.setEnabled(output, true)
-  if not okShowOut then return nil, showOutErr end
+  if not okShowOut then return rollbackAfterMove(showOutErr) end
 
   return {
     lock = lock,

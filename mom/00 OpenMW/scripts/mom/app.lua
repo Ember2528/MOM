@@ -74,6 +74,8 @@ local function resetRuntime(app)
     pcall(app.engineSession.clear, app.engineSession)
   end
   app.runtime = nil
+  app.dormant = false
+  app.dormantManifest = nil
   app.engineSession = nil
   app.activeDiagnostics = nil
   app.activeManifestHash = nil
@@ -94,6 +96,8 @@ function M.new(opts)
     loadMetadata = nil,
     preservedPayload = nil,
     runtime = nil,
+    dormant = false,
+    dormantManifest = nil,
     engineSession = nil,
     activeDiagnostics = nil,
     activeManifestHash = nil,
@@ -134,7 +138,7 @@ end
 
 function M.bootstrap(app, candidateValue)
   if type(app) ~= 'table' then return nil, failure('app_invalid', 'App is invalid') end
-  if app.runtime ~= nil then
+  if app.runtime ~= nil or app.dormant == true then
     return nil, failure('runtime_active', 'MOM already installed its startup plan')
   end
   if app.loadedLedger == nil or app.status == 'loaded-quarantined' then
@@ -163,9 +167,31 @@ function M.bootstrap(app, candidateValue)
     return nil, candidateErr
   end
 
+  -- Dormant fast path: when GLOBAL has 0 actions and the ledger has no saved
+  -- ops or retained refs (e.g. a pure LOAD modlist), skip opening an OpenMW
+  -- engine session and avoid per-frame polling.
+  if #(value.manifest.actionIds or {}) == 0
+      and app.loadedLedger:opCount() == 0
+      and next(app.loadedLedger.doc.refs) == nil then
+    app.loadedLedger:setManifestHash(value.manifest.contentHash)
+    app.dormant = true
+    app.dormantManifest = value.manifest
+    app.preservedPayload = nil
+    app.activeDiagnostics = value.diagnostics
+    app.activeManifestHash = value.manifest.contentHash
+    app.status = 'running'
+    app.lastError = nil
+    return {
+      status = app.status,
+      manifestHash = value.manifest.contentHash,
+      dormant = true,
+    }, nil
+  end
+
   local activationBundle, prepErr = runtime_api.prepareActivation({
     manifest = value.manifest,
     extensionCatalog = value.extensionCatalog,
+    ledger = app.loadedLedger,
     unknownRetryDelay = app.unknownRetryDelay,
   })
   if activationBundle == nil then
@@ -223,12 +249,18 @@ function M.noteStartup(app, status)
 end
 
 function M.tick(app, requestedFrame)
-  if type(app) ~= 'table' or app.runtime == nil then
+  if type(app) ~= 'table' or (app.runtime == nil and app.dormant ~= true) then
     return nil, failure('runtime_unavailable', 'App runtime is unavailable')
   end
   local frame = requestedFrame == nil and (app.frame + 1) or requestedFrame
   if type(frame) ~= 'number' or frame < app.frame or frame % 1 ~= 0 then
     return nil, failure('frame_invalid', 'App frame must be a monotonic non-negative integer')
+  end
+  if app.dormant == true then
+    app.frame = frame
+    if app.loadedLedger ~= nil then app.loadedLedger:setFrame(frame) end
+    app.lastError = nil
+    return {frame = frame, guardsEvaluated = 0, discovery = 0, mutations = 0, pending = 0}, nil
   end
   local report, err = runtime_api.tick(app.runtime, {frame = frame})
   if report == nil then
@@ -241,26 +273,29 @@ function M.tick(app, requestedFrame)
 end
 
 function M.observeObject(app, object)
-  if type(app) ~= 'table' or app.runtime == nil then
+  if type(app) ~= 'table' or (app.runtime == nil and app.dormant ~= true) then
     return nil, failure('runtime_unavailable', 'App runtime is unavailable')
   end
+  if app.dormant == true then return true, nil end
   return runtime_api.observeObject(app.runtime, object, app.frame)
 end
 
 function M.observeCell(app, cell)
-  if type(app) ~= 'table' or app.runtime == nil then
+  if type(app) ~= 'table' or (app.runtime == nil and app.dormant ~= true) then
     return nil, failure('runtime_unavailable', 'App runtime is unavailable')
   end
+  if app.dormant == true then return true, nil end
   return runtime_api.observeCell(app.runtime, cell, app.frame)
 end
 
 function M.enqueueEvent(app, name)
-  if type(app) ~= 'table' or app.runtime == nil then
+  if type(app) ~= 'table' or (app.runtime == nil and app.dormant ~= true) then
     return nil, failure('runtime_unavailable', 'App runtime is unavailable')
   end
   if not nonEmpty(name) then
     return nil, failure('event_invalid', 'Event name is invalid')
   end
+  if app.dormant == true then return true, nil end
   return runtime_api.enqueueEvent(app.runtime, name)
 end
 

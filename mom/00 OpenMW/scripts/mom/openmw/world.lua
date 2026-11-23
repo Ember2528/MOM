@@ -89,9 +89,11 @@ function M.new(deps, opts)
     end
   end
 
+  local MAX_CELL_CACHE = 256
   local observed = {}        -- cellKey -> { handle, facts, routes, loaded, previsit, lastSeenFrame }
   local byHandle = {}        -- cell userdata -> entry
   local cellCache = {}       -- lowerKey/id -> cell userdata
+  local cellCacheCount = 0
   local factsCache = {}      -- lowerKey -> facts
   local worldspaceHints = {} -- worldspaceKey -> exterior cell userdata
   local liveOutputs = {}     -- outputRefId -> GameObject handle
@@ -99,6 +101,27 @@ function M.new(deps, opts)
   local frameCacheFrame = -1
   local frameGetAllCache = {} -- cellKey..'\0'..(typeName or '*') -> array of refs
   local frameFactsCache = {}  -- GameObject -> normalized ref facts
+
+  local function cacheCellMetadata(facts, cell)
+    if cellCacheCount >= MAX_CELL_CACHE then
+      local nextCells, nextFacts, nextCount = {}, {}, 0
+      for key, entry in pairs(observed) do
+        nextCells[key] = entry.handle
+        if entry.facts.idLower then nextCells[entry.facts.idLower] = entry.handle end
+        nextFacts[key] = entry.facts
+        nextCount = nextCount + 1
+      end
+      cellCache = nextCells
+      factsCache = nextFacts
+      cellCacheCount = nextCount
+    end
+    if factsCache[facts.key] == nil then
+      cellCacheCount = cellCacheCount + 1
+    end
+    cellCache[facts.key] = cell
+    if facts.idLower ~= nil then cellCache[facts.idLower] = cell end
+    factsCache[facts.key] = facts
+  end
 
   local api = {
     plainPosition = plainPosition,
@@ -192,9 +215,7 @@ function M.new(deps, opts)
       }
     end)
     if not ok then return nil, tostring(facts) end
-    cellCache[facts.key] = cell
-    cellCache[facts.idLower] = cell
-    factsCache[facts.key] = facts
+    cacheCellMetadata(facts, cell)
     if facts.isExterior then
       worldspaceHints[facts.worldspaceKey] = worldspaceHints[facts.worldspaceKey] or cell
     end
@@ -585,6 +606,7 @@ function M.new(deps, opts)
     observed = {}
     byHandle = {}
     cellCache = {}
+    cellCacheCount = 0
     factsCache = {}
     worldspaceHints = {}
     liveOutputs = {}

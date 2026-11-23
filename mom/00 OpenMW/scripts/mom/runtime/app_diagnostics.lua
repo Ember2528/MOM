@@ -147,11 +147,40 @@ function M.selfcheck(app, options)
   local runtimeStatus, runtimeError = nil, nil
   if app.runtime ~= nil then
     runtimeStatus = runtime_api.status(app.runtime, options)
+  elseif app.dormant == true then
+    local scansComplete = 0
+    for _ in pairs(app.loadedLedger and app.loadedLedger.doc.staticScans or {}) do
+      scansComplete = scansComplete + 1
+    end
+    runtimeStatus = {
+      manifestHash = app.activeManifestHash,
+      dormant = true,
+      limit = STATUS_LIMIT,
+      blockers = {count = 0, samples = {}},
+      operationWork = {count = 0, samples = {}},
+      counts = {
+        liveOperations = 0,
+        pendingOperations = 0,
+        scheduledOperations = 0,
+        activeCommands = 0,
+        awaitingCompletions = 0,
+        operationTombstones = 0,
+        operationLifecycles = {static = 0, state = 0},
+        staticFailures = 0,
+        staticScans = {complete = scansComplete},
+      },
+      queues = {
+        staticCells = 0,
+        state = {pendingOwners = 0},
+      },
+      errors = {},
+    }
   end
   local ledgerOk, ledgerErrors = auditLedger(app)
   local manifestOk, manifestErrors = nil, nil
-  if app.runtime ~= nil then
-    manifestOk, manifestErrors = manifest_contract.validate(app.runtime.manifest)
+  local activeManifest = (app.runtime ~= nil and app.runtime.manifest) or app.dormantManifest
+  if activeManifest ~= nil then
+    manifestOk, manifestErrors = manifest_contract.validate(activeManifest)
   end
   local boundedLedgerErrors, ledgerErrorsTruncated = boundedArray(ledgerErrors or {}, STATUS_LIMIT)
   local boundedManifestErrors, manifestErrorsTruncated = boundedArray(manifestErrors or {}, STATUS_LIMIT)

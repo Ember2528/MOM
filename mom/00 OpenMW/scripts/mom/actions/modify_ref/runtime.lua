@@ -270,16 +270,34 @@ function M.apply(_program, target, token, ctx)
   local function mark(c) if not seen[c] then seen[c] = true; changed[#changed + 1] = c end end
   local recoveryCells = clone(token.recoveryCells) or {}
 
+  -- Roll back any earlier field mutations in this call if a later non-transient step fails.
+  local function failWithRollback(err)
+    if seen['ref.position'] or seen['ref.rotation'] then
+      pcall(ctx.refOps.teleport, target, {
+        cell = current.cell,
+        position = current.position,
+        rotation = seen['ref.rotation'] and current.rotation or nil,
+      })
+    end
+    if seen['ref.scale'] and baseline.scale ~= nil then
+      pcall(ctx.refOps.setScale, target, baseline.scale)
+    end
+    if seen['ref.owner'] and baseline.owner ~= nil then
+      pcall(ctx.refOps.setOwner, target, baseline.owner)
+    end
+    return {status = 'failed', changedClaims = {}, message = tostring(err)}
+  end
+
   if patch.owner ~= nil and not plain_data.equalValidated(current.owner or {clear = true}, patch.owner) then
     local ok, err = ctx.refOps.setOwner(target, patch.owner)
-    if not ok then return {status = 'failed', changedClaims = changed, message = tostring(err)} end
+    if not ok then return failWithRollback(err) end
     mark('ref.owner')
   end
   if patch.scale ~= nil then
     local desired = patch.scale.mode == 'scaleBy' and (baseline.scale * patch.scale.value) or patch.scale.value
     if current.scale ~= desired then
       local ok, err = ctx.refOps.setScale(target, desired)
-      if not ok then return {status = 'failed', changedClaims = changed, message = tostring(err)} end
+      if not ok then return failWithRollback(err) end
       mark('ref.scale')
     end
   end
@@ -299,14 +317,14 @@ function M.apply(_program, target, token, ctx)
             pending = {phase = 'retry-apply', nextFrame = ctx.frame + 1},
           }
         end
-        return {status = 'failed', changedClaims = changed, message = tostring(err)}
+        return failWithRollback(err)
       end
       for i = 1, #claims do mark(claims[i]) end
     end
   end
   if patch.enabled ~= nil and current.enabled ~= (patch.enabled == true) then
     local ok, err = ctx.refOps.setEnabled(target, patch.enabled == true)
-    if not ok then return {status = 'failed', changedClaims = changed, message = tostring(err)} end
+    if not ok then return failWithRollback(err) end
     mark('ref.enabled')
   end
 

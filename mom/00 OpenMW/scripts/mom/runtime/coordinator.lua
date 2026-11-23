@@ -10,7 +10,7 @@ local strings = require('scripts.mom.common.strings')
 
 local nonEmpty = strings.isNonEmpty
 
-local function prepareBindings(manifest, extensionCatalog)
+local function prepareBindings(manifest, extensionCatalog, ledger)
   local actionModules = {}
   local actionsCatalog = extensionCatalog.actions
   local targetFilters = {}
@@ -33,6 +33,29 @@ local function prepareBindings(manifest, extensionCatalog)
   for id, entry in pairs(actionsCatalog and actionsCatalog.byId or {}) do
     if type(entry.module) == 'table' and entry.module.execution ~= 'load' then
       actionModules[id] = entry.module
+    end
+  end
+
+  -- Verify any saved operations against active extension versions & stored-state hooks.
+  if ledger ~= nil and type(ledger.doc) == 'table' and type(ledger.doc.ops) == 'table' then
+    for opId, op in pairs(ledger.doc.ops) do
+      local mod = actionModules[op.family]
+      if mod == nil then
+        return nil, {'saved operation ' .. tostring(opId) .. ' references unavailable family ' .. tostring(op.family)}
+      end
+      if op.familyAbiVersion ~= nil and mod.abiVersion ~= nil and op.familyAbiVersion ~= mod.abiVersion then
+        return nil, {'saved operation ' .. tostring(opId) .. ' ABI version mismatch for ' .. tostring(op.family)}
+      end
+      if op.durability == 'reversible' and op.revertTokenVersion ~= nil
+          and mod.revertTokenVersion ~= nil and op.revertTokenVersion ~= mod.revertTokenVersion then
+        return nil, {'saved operation ' .. tostring(opId) .. ' revertTokenVersion mismatch for ' .. tostring(op.family)}
+      end
+      if type(mod.validateStoredState) == 'function' then
+        local okVal, valid, valErr = pcall(mod.validateStoredState, 'token', op.token, {op = op})
+        if not okVal or valid == false or valid == nil then
+          return nil, {'saved operation ' .. tostring(opId) .. ' token invalid: ' .. tostring(okVal and valErr or valid)}
+        end
+      end
     end
   end
 
@@ -69,7 +92,7 @@ end
 function M.prepareActivation(opts)
   local manifest = assert(opts.manifest, 'prepareActivation requires manifest')
   local extensionCatalog = assert(opts.extensionCatalog, 'prepareActivation requires extensionCatalog')
-  local bindings, err = prepareBindings(manifest, extensionCatalog)
+  local bindings, err = prepareBindings(manifest, extensionCatalog, opts.ledger)
   if bindings == nil then return nil, err end
   local guards, guardErr = guards_api.new(manifest, extensionCatalog.guards, {
     unknownRetryDelay = opts.unknownRetryDelay,
@@ -154,7 +177,10 @@ function M.tick(rt, opts)
   end
 
   -- 2. Sync observed cells (world.activeCells / players / activeActors).
-  local entered = rt.session:syncObservedCells(frame)
+  local entered, unloaded = rt.session:syncObservedCells(frame)
+  if unloaded ~= nil and #unloaded > 0 then
+    rt.reconciler.onCellsUnloaded(unloaded)
+  end
   if entered ~= nil and #entered > 0 then
     for i = 1, #entered do
       rt.reconciler.enqueueCell(entered[i].facts.key)
@@ -162,8 +188,10 @@ function M.tick(rt, opts)
     rt.guards.onCellEntered()
   end
 
-  -- 3. Poll time & weather guard changes only when subscribed.
-  local events = rt.session:pollGuardEvents(frame, rt.guards.watchTime, rt.guards.watchWeather)
+  -- 3. Poll time & weather guard changes only when subscribed (region-filtered).
+  local events = rt.session:pollGuardEvents(
+    frame, rt.guards.watchTime, rt.guards.watchWeather, rt.guards.watchedWeatherRegions
+  )
   for i = 1, #(events or {}) do
     rt.guards.dispatchEvent(events[i])
   end
@@ -171,7 +199,7 @@ function M.tick(rt, opts)
   -- 4. Evaluate dirty & due-retry guard owners.
   local evalRes = rt.guards.evaluateDue(frame, rt.session.guardCapabilities)
   if #evalRes.changed > 0 then
-    rt.reconciler.markStateDirty()
+    rt.reconciler.markOwnersDirty(evalRes.changed)
   end
 
   -- 5. Advance pending ops, per-cell static scans, and state reconciliation.

@@ -124,8 +124,8 @@ function M.newFactory(deps)
         return worldApi.observeCell(cell, frame, false)
       end
 
-      function session:pollGuardEvents(frame, watchTime, watchWeather)
-        return guardApi.poll(frame, watchTime, watchWeather)
+      function session:pollGuardEvents(frame, watchTime, watchWeather, watchedWeatherRegions)
+        return guardApi.poll(frame, watchTime, watchWeather, watchedWeatherRegions)
       end
 
       function session:replaceQuestSnapshot(quests)
