@@ -1,0 +1,12 @@
+version: 0
+name: Balmora External Guard Example
+description: Harness-only external guard plugin coverage using MOM_GuardEvent.
+
+variants:
+  balmora_external_guard_example:
+    guards:
+      - when:
+          - [harness.toggle, external_guard, true]
+        actions:
+          - place:
+              - ["Balmora, Eight Plates", "light_de_paper_lantern_off", [1260.0, 970.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]

@@ -1,0 +1,16 @@
+# Vanilla-path demonstration of the generic Basic Static Replacement recipe:
+# https://github.com/DreamWeave-MP/S3ctors-S3cret-St4sh/blob/5e16c717f9524a9ab049e3557ccf04ab4cca9a86/content/static_switching_system/docs/recipes/basic-static-replacement.md
+# This swaps tapestry models, not the recipe's literal Cliff Racer example.
+# This ordinary attach describes Static targets and a global model-only change.
+# MOM automatically promotes eligible actions; no layer setting is authored.
+# Reference identity is preserved without per-reference replacement.
+version: 0
+name: SSS basic uniform static model demonstration
+variants:
+  uniform_static_models:
+    requires: [Morrowind.esm]
+    actions:
+      - select: {type: Static}
+        attach:
+          - ["*", f/Furn_De_Tapestry_04.NIF, f/Furn_De_Tapestry_03.NIF]
+        disableOriginal: true

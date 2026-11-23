@@ -1,0 +1,17 @@
+version: 0
+name: Mixed book definition and urn reference example
+description: Change a book definition in LOAD and scale existing Eight Plates urns at runtime.
+variants:
+  mixed_definition_example:
+    actions:
+      - record:
+          type: Book
+          id: bk_lustyargonianmaid
+          patch:
+            name: A MOM Example Book
+            text: "A replacement text from the optional MOM mixed-definition example."
+      - select:
+          cell: "Balmora, Eight Plates"
+          recordId: urn_01
+        modify:
+          scale: {to: 0.9}

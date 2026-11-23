@@ -1,0 +1,12 @@
+name: MOM coincident placement identity
+placements:
+  - id: mom.vfr.decoration.a
+    record: furn_de_tapestry_02
+    interior: Ald-ruhn, Guild of Mages
+    position: [800, 100, 200]
+    scale: 1.25
+  - id: mom.vfr.decoration.b
+    record: furn_de_tapestry_02
+    interior: Ald-ruhn, Guild of Mages
+    position: [800, 100, 200]
+    scale: 1.25

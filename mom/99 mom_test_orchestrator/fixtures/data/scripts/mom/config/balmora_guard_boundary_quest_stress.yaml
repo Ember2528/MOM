@@ -1,0 +1,48 @@
+version: 0
+name: Balmora quest guard boundary stress
+description: Harness-only stress cases for quest-stage guard boundary-skip behavior.
+
+variants:
+  balmora_quest_boundary_stress:
+    description: Many independent quest-stage range guard owners in Eight Plates.
+    guards:
+      - when:
+          - [quest_stage, "FG_RatHunt", range, 10, 20, inclusive]
+        actions:
+          - place:
+              - ["Balmora, Eight Plates", "light_de_paper_lantern_off", [1320.0, 1520.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+      - when:
+          - [quest_stage, "FG_RatHunt", range, 10, 20, inclusive]
+        actions:
+          - place:
+              - ["Balmora, Eight Plates", "light_de_paper_lantern_off", [1400.0, 1520.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+      - when:
+          - [quest_stage, "FG_RatHunt", range, 10, 20, inclusive]
+        actions:
+          - place:
+              - ["Balmora, Eight Plates", "light_de_paper_lantern_off", [1480.0, 1520.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+      - when:
+          - [quest_stage, "FG_RatHunt", range, 10, 20, inclusive]
+        actions:
+          - place:
+              - ["Balmora, Eight Plates", "light_de_paper_lantern_off", [1560.0, 1520.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+      - when:
+          - [quest_stage, "FG_RatHunt", range, 10, 20, inclusive]
+        actions:
+          - place:
+              - ["Balmora, Eight Plates", "light_de_paper_lantern_off", [1320.0, 1600.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+      - when:
+          - [quest_stage, "FG_RatHunt", range, 10, 20, inclusive]
+        actions:
+          - place:
+              - ["Balmora, Eight Plates", "light_de_paper_lantern_off", [1400.0, 1600.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+      - when:
+          - [quest_stage, "FG_RatHunt", range, 10, 20, inclusive]
+        actions:
+          - place:
+              - ["Balmora, Eight Plates", "light_de_paper_lantern_off", [1480.0, 1600.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+      - when:
+          - [quest_stage, "FG_RatHunt", range, 10, 20, inclusive]
+        actions:
+          - place:
+              - ["Balmora, Eight Plates", "light_de_paper_lantern_off", [1560.0, 1600.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]

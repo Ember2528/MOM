@@ -1,0 +1,12 @@
+version: 0
+name: Balmora Combined Relocation Disable Example
+description: One guarded action moves the Guild chest into Eight Plates and disables it. When the guard closes, the action restores the chest's original state.
+
+variants:
+  balmora_combined_relocation_disable_example:
+    guards:
+      - when:
+          - [time, hour, range, 20, 22, exclusive]
+        actions:
+          - modify:
+              - ["Balmora, Guild of Mages", "chest_small_01_ingredie", { enabled: false, relocate: { cell: "Balmora, Eight Plates", position: [760.0, 980.0, -244.0], rotation: { yaw: 180.0 } } }]

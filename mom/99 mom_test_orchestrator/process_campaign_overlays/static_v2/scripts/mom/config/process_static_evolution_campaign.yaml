@@ -1,0 +1,11 @@
+version: 0
+name: Process Static Evolution Campaign
+description: Semantic static reorder, addition, removal, and restart coverage.
+
+variants:
+  process_static_evolution_campaign:
+    actions:
+      - place:
+          - ["Balmora, Eight Plates", "light_de_paper_lantern_off", [3080.0, 3000.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+      - place:
+          - ["Balmora, Eight Plates", "light_de_paper_lantern_off", [3000.0, 3000.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]

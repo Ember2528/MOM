@@ -1,0 +1,13 @@
+version: 0
+name: Respawning Container Replacement Harness
+description: Toggle-owned mesh clone of a deterministic vanilla respawning plant.
+
+variants:
+  respawning_container_replacement:
+    guards:
+      - when:
+          - [harness.toggle, respawning_container_replacement, true]
+        actions:
+          - attach:
+              - ["Vassamsi Grotto", "flora_bc_fern_01, (-2050, 3800, -32)", 'f\Flora_heather_01.NIF']
+            disableOriginal: true

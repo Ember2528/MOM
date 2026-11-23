@@ -1,0 +1,10 @@
+# Include-only source paths, relative to the repository root.
+# Archive entries omit the leading mom/ directory.
+mom/00 OpenMW
+mom/01 Mod Patches
+mom/02 Examples
+mom/04 SSS Conversions
+mom/docs/AUTHORED_CONFIG_REFERENCE.md
+mom/docs/MOD_AUTHOR_GUIDE.md
+mom/docs/COMPATIBILITY.md
+mom/README.md

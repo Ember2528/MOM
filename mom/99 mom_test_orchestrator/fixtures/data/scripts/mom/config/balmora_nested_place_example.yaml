@@ -1,0 +1,20 @@
+version: 0
+name: Balmora Nested Place Example
+description: Multiple inherited outputs create child placements in two cells.
+
+variants:
+  balmora_nested_place:
+    guards:
+      - when:
+          - [time, hour, range, 6, 20, exclusive]
+        actions:
+          - place:
+              - ["Balmora, Eight Plates", "barrel_01", [1300.0, 920.0, -311.0], { yaw: 0.0 }]
+              - ["Balmora, Eight Plates", "barrel_01", [1320.0, 920.0, -311.0], { yaw: 0.0 }]
+            actions:
+              - place:
+                  - ["Balmora, Eight Plates", "light_de_paper_lantern_off", [1340.0, 920.0, -311.0], { yaw: 0.0 }]
+                  - ["Balmora, Guild of Mages", "light_de_paper_lantern_off", [500.0, 600.0, -100.0], { yaw: 0.0 }]
+                actions:
+                  - modify:
+                      scale: { to: 1.2 }

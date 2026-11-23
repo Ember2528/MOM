@@ -1,0 +1,18 @@
+# Configuration only: install the original mod resources separately.
+# No meshes, animations, sounds, source readme, SSS config or Lua helper are distributed here.
+# Lustidrike's animation also expects the external RV_Scampbells sound record.
+# Source: https://www.nexusmods.com/morrowind/mods/57514
+# Mesh-only conversion of Ruffin Vangarr and Katya Karrel's Scamp Overhaul.
+# Creature replacement uses the existing attachment grammar; select source
+# record IDs positively rather than every record sharing the source model.
+version: 0
+name: Concept Art Scamp Visuals - MOM
+description: Unique Creeper and Lustidrike meshes; source gameplay and area plugins are not included.
+variants:
+  unique_scamp_models:
+    requires: [Morrowind.esm]
+    actions:
+      - attach:
+          - ["*", scamp_creeper, 'RV\creeper.nif']
+          - ["*", lustidrike, 'RV\Lustidrike.nif']
+        disableOriginal: true

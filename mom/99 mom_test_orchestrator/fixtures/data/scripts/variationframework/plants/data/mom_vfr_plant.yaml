@@ -1,0 +1,10 @@
+name: MOM native respawning variation fixture
+record_variants:
+  flora_bc_fern_01:
+    meshes: ['f/flora_heather_01.nif']
+weights:
+  default: [1, 0]
+  wetness:
+    - {at: 0, w: [0, 1]}
+  interiors:
+    'Ald-ruhn, Guild of Mages': {region: 'Bitter Coast Region'}

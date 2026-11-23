@@ -1,0 +1,292 @@
+From: MOM Harness <mom-harness@example.invalid>
+Subject: [PATCH] lua: expose opt-in real Luau harness authority
+
+Target: OursCodeur/openmw clockwork-alpha, c5e5a9a6362c35512823884753d2d5284af204fa.
+Keep the ordinary sandbox unchanged. The harness explicitly opts into
+real collector control and atomic result writing. No LuaJIT or
+filesystem libraries are emulated.
+
+diff --git a/apps/components_tests/lua/testlua.cpp b/apps/components_tests/lua/testlua.cpp
+index 2030744..4fee991 100644
+--- a/apps/components_tests/lua/testlua.cpp
++++ b/apps/components_tests/lua/testlua.cpp
+@@ -4,6 +4,9 @@
+ #include <gtest/gtest.h>
+ 
+ #include <array>
++#include <fstream>
++#include <iterator>
++#include <components/files/conversion.hpp>
+ #include <sstream>
+ #include <string>
+ 
+@@ -87,6 +90,28 @@ return {
+         return t.b
+     end,
+     print = print,
++    harnessAtomicWrite = function(path, bytes)
++        return select('sandbox.bypass').writeAtomic(path, bytes)
++    end,
++    harnessCollector = function()
++        local gc = select('sandbox.bypass').collectgarbage
++        assert(collectgarbage == nil)
++        local weak = setmetatable({}, {__mode = 'v'})
++        local function store() weak[1] = {} end
++        store()
++        gc('collect')
++        gc('collect')
++        assert(weak[1] == nil)
++        assert(type(gc('count')) == 'number' and gc('count') > 0)
++        gc('stop')
++        local stopped = not gc('isrunning')
++        gc('restart')
++        return stopped and gc('isrunning')
++    end,
++    selectPassthrough = function()
++        local first, second = select(2, 'a', 'b', 'c')
++        return first .. second .. select('#', 'a', 'b', 'c')
++    end,
+ 
+     iteratePlain = function()
+         local sum = 0
+@@ -300,6 +325,51 @@ return function() print('call') end
+         EXPECT_EQ(script1.get<Lua::Function>("get").invoke<int>(), 45);
+     }
+ 
++    TEST_F(LuaStateTest, HarnessCollectorRequiresExplicitAuthority)
++    {
++        const VFS::Path::Normalized path(testsPath);
++        Lua::Value ordinary = mLua.runInNewSandbox(path, "", {}, {});
++        EXPECT_ERROR(ordinary.get<Lua::Function>("harnessCollector").invoke<bool>(), "select");
++
++        Lua::StateSettings settings;
++        settings.mUnsafeStdlibAccess = true;
++        Lua::State instrumented(mVFS.get(), &mCfg, settings);
++        Lua::Value script = instrumented.runInNewSandbox(path, "", {}, {});
++        EXPECT_TRUE(script.get<Lua::Function>("harnessCollector").invoke<bool>());
++        EXPECT_EQ(script.get<Lua::Function>("selectPassthrough").invoke<std::string>(), "bc3");
++    }
++
++    TEST_F(LuaStateTest, HarnessAtomicWriterRequiresExplicitAuthority)
++    {
++        const VFS::Path::Normalized path(testsPath);
++        Lua::Value ordinary = mLua.runInNewSandbox(path, "", {}, {});
++        EXPECT_ERROR(ordinary.get<Lua::Function>("harnessAtomicWrite").invoke<bool>("unused", "bytes"), "select");
++
++        Lua::StateSettings settings;
++        settings.mUnsafeStdlibAccess = true;
++        Lua::State instrumented(mVFS.get(), &mCfg, settings);
++        Lua::Value script = instrumented.runInNewSandbox(path, "", {}, {});
++        const auto destination = TestingOpenMW::outputFilePath("harness-result.json");
++        const std::string filename = Files::pathToUnicodeString(destination);
++        EXPECT_TRUE(script.get<Lua::Function>("harnessAtomicWrite").invoke<bool>(filename, "old result"));
++        const std::string payload("new\0result", 10);
++        EXPECT_TRUE(script.get<Lua::Function>("harnessAtomicWrite").invoke<bool>(filename, payload));
++        std::ifstream file(destination, std::ios::binary);
++        EXPECT_EQ(std::string(std::istreambuf_iterator<char>(file), {}), payload);
++        EXPECT_FALSE(std::filesystem::exists(destination.string() + ".tmp"));
++        const auto missingParent = destination / "missing" / "result.json";
++        EXPECT_ERROR(script.get<Lua::Function>("harnessAtomicWrite")
++                         .invoke<bool>(Files::pathToUnicodeString(missingParent), payload),
++            "cannot open temporary performance result");
++        EXPECT_FALSE(std::filesystem::exists(missingParent.string() + ".tmp"));
++        const auto blocked = TestingOpenMW::outputDirPath("harness-rename-target");
++        EXPECT_ERROR(script.get<Lua::Function>("harnessAtomicWrite")
++                         .invoke<bool>(Files::pathToUnicodeString(blocked), payload),
++            "rename");
++        EXPECT_TRUE(std::filesystem::is_directory(blocked));
++        EXPECT_FALSE(std::filesystem::exists(blocked.string() + ".tmp"));
++    }
++
+     TEST_F(LuaStateTest, SharedTemplateInstancesIsolateGlobalsAndG)
+     {
+         const VFS::Path::Normalized path(sharedStatePath);
+diff --git a/apps/openmw/mwlua/luamanagerimp.cpp b/apps/openmw/mwlua/luamanagerimp.cpp
+index 57eaa61..1359750 100644
+--- a/apps/openmw/mwlua/luamanagerimp.cpp
++++ b/apps/openmw/mwlua/luamanagerimp.cpp
+@@ -199,6 +199,7 @@ namespace MWLua
+         if (nativeCodeGenMode == Lua::NativeCodeGenMode::Eager)
+             compileOptions.typeInfoLevel = 1;
+         return { .mProfilerEnabled = Settings::lua().mLuaProfiler,
++            .mUnsafeStdlibAccess = Settings::lua().mUnsafeStdlibAccess,
+             .mExecutionTimeLimit = Settings::lua().mExecutionTimeLimitPerCall,
+             .mMemoryLimit = Settings::lua().mMemoryLimit,
+             .mInitializationMemoryCategory = MemoryCategory::Initialization,
+diff --git a/components/lua/luastate.cpp b/components/lua/luastate.cpp
+index 2e897ce..9b10049 100644
+--- a/components/lua/luastate.cpp
++++ b/components/lua/luastate.cpp
+@@ -31,6 +31,100 @@ namespace Lua
+ {
+     namespace
+     {
++        // Test-only VM authority. Luau intentionally has no public
++        // collectgarbage library; use the actual collector rather than a shim.
++        int harnessCollectGarbage(lua_State* state)
++        {
++            const std::string_view option(luaL_optstring(state, 1, "collect"));
++            if (option == "count")
++                lua_pushnumber(state, static_cast<double>(lua_totalbytes(state, -1)) / 1024.0);
++            else if (option == "isrunning")
++                lua_pushboolean(state, lua_gc(state, LUA_GCISRUNNING, 0) != 0);
++            else if (option == "step")
++                lua_pushboolean(state, lua_gc(state, LUA_GCSTEP, luaL_optinteger(state, 2, 0)) != 0);
++            else
++            {
++                int operation = LUA_GCCOLLECT;
++                if (option == "stop")
++                    operation = LUA_GCSTOP;
++                else if (option == "restart")
++                    operation = LUA_GCRESTART;
++                else if (option != "collect")
++                    luaL_error(state, "unsupported garbage collector option");
++                lua_pushinteger(state, lua_gc(state, operation, 0));
++            }
++            return 1;
++        }
++
++        // Narrow test result transport; no io/os library is introduced.
++        int harnessWriteAtomic(lua_State* state)
++        {
++            return invokeLuaCFunction(state, [&] {
++                size_t pathSize = 0;
++                const char* pathBytes = luaL_checklstring(state, 1, &pathSize);
++                const std::string_view path(pathBytes, pathSize);
++                if (path.empty() || path.find('\0') != std::string_view::npos)
++                    luaL_error(state, "result path must be nonempty and contain no NUL bytes");
++                size_t size = 0;
++                const char* bytes = luaL_checklstring(state, 2, &size);
++                const std::filesystem::path destination = Files::pathFromUnicodeString(path);
++                std::filesystem::path temporary = destination;
++                temporary += ".tmp";
++                try
++                {
++                    std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
++                    if (!file)
++                        throw std::runtime_error("cannot open temporary performance result");
++                    file.write(bytes, static_cast<std::streamsize>(size));
++                    file.close();
++                    if (!file)
++                        throw std::runtime_error("cannot write temporary performance result");
++                    // A failed rename preserves any previously published result.
++                    std::filesystem::rename(temporary, destination);
++                }
++                catch (...)
++                {
++                    std::error_code ignored;
++                    std::filesystem::remove(temporary, ignored);
++                    throw;
++                }
++                lua_pushboolean(state, true);
++                return 1;
++            });
++        }
++
++        int harnessSandboxSelect(lua_State* state)
++        {
++            const int arguments = lua_gettop(state);
++            if (arguments == 1 && lua_type(state, 1) == LUA_TSTRING)
++            {
++                size_t length = 0;
++                const char* value = lua_tolstring(state, 1, &length);
++                if (std::string_view(value, length) == "sandbox.bypass")
++                {
++                    lua_pushvalue(state, lua_upvalueindex(2));
++                    return 1;
++                }
++            }
++            lua_pushvalue(state, lua_upvalueindex(1));
++            lua_insert(state, 1);
++            lua_call(state, arguments, LUA_MULTRET);
++            return lua_gettop(state);
++        }
++
++        void installHarnessAuthority(lua_State* state)
++        {
++            lua_getglobal(state, "select");
++            lua_createtable(state, 0, 2);
++            pushCFunction(state, harnessCollectGarbage, "openmw.internal.harnessCollectGarbage");
++            lua_setfield(state, -2, "collectgarbage");
++            pushCFunction(state, harnessWriteAtomic, "openmw.internal.harnessWriteAtomic");
++            lua_setfield(state, -2, "writeAtomic");
++            lua_setreadonly(state, -1, true);
++            pushCClosure(state, harnessSandboxSelect, "openmw.internal.harnessSandboxSelect", 2);
++            lua_setglobal(state, "select");
++        }
++
+         constexpr std::string_view excludedSandboxGlobals[] = { "getfenv", "setfenv", "newproxy" };
+         constexpr std::string_view replacedSandboxGlobals[] = { "getmetatable", "print", "require" };
+         constexpr std::string_view internalSandboxGlobals[] = { "printGen", "requireGen", "getSafeMetatable" };
+@@ -390,6 +484,8 @@ namespace Lua
+             // The integer library is enabled through FFlag::LuauIntegerLibrary in
+             // runtimeflags.cpp, which must happen before luaL_openlibs.
+             luaL_openlibs(state);
++            if (mSettings.mUnsafeStdlibAccess)
++                installHarnessAuthority(state);
+             installCompatStringFormat(state);
+             installNativeVectorBufferWriter(state);
+             mNativeCodeGen->initialize(state);
+diff --git a/components/lua/luastate.hpp b/components/lua/luastate.hpp
+index 75407bb..6230b99 100644
+--- a/components/lua/luastate.hpp
++++ b/components/lua/luastate.hpp
+@@ -54,6 +54,7 @@ namespace Lua
+     {
+         // Times script calls and tracks memory by context and allocation activity by script.
+         bool mProfilerEnabled = false;
++        bool mUnsafeStdlibAccess = false;
+         uint64_t mExecutionTimeLimit = 0; // milliseconds per script call
+         uint64_t mMemoryLimit = 0;
+         MemoryCategory mInitializationMemoryCategory = 0;
+diff --git a/components/settings/categories/lua.hpp b/components/settings/categories/lua.hpp
+index 7331cd6..4fdceb6 100644
+--- a/components/settings/categories/lua.hpp
++++ b/components/settings/categories/lua.hpp
+@@ -22,6 +22,7 @@ namespace Settings
+         SettingValue<bool> mLuaDebug{ mIndex, "Lua", "lua debug" };
+         SettingValue<int> mLuaNumThreads{ mIndex, "Lua", "lua num threads", makeEnumSanitizerInt({ 0, 1 }) };
+         SettingValue<bool> mLuaProfiler{ mIndex, "Lua", "lua profiler" };
++        SettingValue<bool> mUnsafeStdlibAccess{ mIndex, "Lua", "unsafe stdlib access" };
+         SettingValue<std::string> mNativeCodeGen{ mIndex, "Lua", "native codegen",
+             makeEnumSanitizerString({ "off", "annotated", "eager" }) };
+         SettingValue<std::uint64_t> mNativeCodeGenMemoryLimit{ mIndex, "Lua", "native codegen memory limit",
+diff --git a/docs/source/reference/modding/settings/lua.rst b/docs/source/reference/modding/settings/lua.rst
+index cf9c2b4..adc8e36 100644
+--- a/docs/source/reference/modding/settings/lua.rst
++++ b/docs/source/reference/modding/settings/lua.rst
+@@ -32,6 +32,19 @@ Lua Settings
+    not live memory, an allocation count, or a comprehensive record of every
+    Luau allocation. The profiler is independent of the Lua watchdog settings.
+ 
++.. omw-setting::
++   :title: unsafe stdlib access
++   :type: boolean
++   :range: true, false
++   :default: false
++
++   Exposes real Luau garbage-collector control through
++   ``select("sandbox.bypass").collectgarbage`` for harness tests.
++   Supports ``collect``, ``count``, ``stop``, ``restart``, ``step``, and
++   ``isrunning``. Also exposes ``writeAtomic(path, bytes)`` to publish test
++   results through an actual temporary-file write and rename. Does not expose
++   filesystem libraries or LuaJIT libraries.
++
+ .. omw-setting::
+    :title: memory limit
+    :type: int
+diff --git a/files/settings-default.cfg b/files/settings-default.cfg
+index 01f0d4e..8e15d96 100644
+--- a/files/settings-default.cfg
++++ b/files/settings-default.cfg
+@@ -1540,6 +1540,10 @@ lua num threads = 1
+ # Enable the Lua profiler: script call timing, memory by context and allocation activity by script.
+ lua profiler = false
+ 
++# Expose collector control and atomic result writing through select("sandbox.bypass").
++# Harness-only testing authority; disabled for ordinary mod execution.
++unsafe stdlib access = false
++
+ # Select native code generation for Lua files: off, annotated, or eager.
+ # Annotated mode compiles @native functions and modules beginning with --!native.
+ native codegen = annotated

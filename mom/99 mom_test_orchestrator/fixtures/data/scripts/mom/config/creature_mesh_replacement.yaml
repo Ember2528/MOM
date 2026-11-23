@@ -1,0 +1,17 @@
+version: 0
+name: Creature mesh replacement contract
+variants:
+  creature_mesh_replacement:
+    guards:
+      # The harness resets the clock to 02:00 before each campaign phase.
+      # Keep this window open across that reset so restart verifies identities.
+      - when: [[harness.toggle, creature_mesh_fixture, true], [time, hour, range, 0, 20, exclusive]]
+        actions:
+          - place:
+              # Reuse a floor location verified by the ordinary actor fixture.
+              # The old 2500/960 point overlaps the mesh-child tapestry test.
+              - ["Balmora, Eight Plates", scamp_creeper, [1110, 840, -311], {yaw: 45}]
+            actions:
+              - attach:
+                  - ['r\Rust rat.NIF']
+                disableOriginal: true

@@ -1,0 +1,24 @@
+version: 0
+name: Balmora Guard Cross-Cell Example
+description: Example guard-owned actions across the Guild of Mages and Eight Plates using exact keyed targets in each child cell.
+
+variants:
+  balmora_scope_cross_cell_example:
+    guards:
+      - when:
+          - [time, hour, range, 6, 20, exclusive]
+        actions:
+          - modify:
+              - ["Balmora, Guild of Mages", "furn_de_lecturn, (375.726, -431.812, -705.556)", { enabled: false }]
+
+          - modify:
+              - ["Balmora, Eight Plates", "misc_de_goblet_03, (401.737, 1147.238, -187.558)", { enabled: false }]
+
+  balmora_keyed_modify_annotated:
+    description: Use a keyed modify and trailing predicate to select one Guild bowl by orientation among duplicate records.
+    guards:
+      - when:
+          - [time, hour, range, 6, 20, exclusive]
+        actions:
+          - modify:
+              - ["Balmora, Guild of Mages", "misc_de_bowl_orange_green_01, (-551.686, 31.301, -182.292)", { enabled: false }, [upright, 25]]

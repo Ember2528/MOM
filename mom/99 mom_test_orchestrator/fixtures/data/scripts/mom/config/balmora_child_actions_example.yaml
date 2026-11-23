@@ -1,0 +1,34 @@
+version: 0
+name: Balmora Child Actions Example
+description: >
+  Guarded `place_ref` in Eight Plates with child actions that inherit parent
+  output targets through direct payload rows.
+
+variants:
+  balmora_child_inventory_narrowed:
+    description: Place a sack and an urn. Use select.recordId to apply the inventory child only to the sack.
+    guards:
+      - when:
+          - [time, hour, range, 6, 20, exclusive]
+        actions:
+          - place:
+              - ["Balmora, Eight Plates", "com_sack_01", [1050.0, 880.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+              - ["Balmora, Eight Plates", "urn_01", [1060.0, 890.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+            actions:
+              - select:
+                  recordId: com_sack_01
+                inventory:
+                  - [{ "iron dagger": [add, 3] }]
+
+  balmora_child_inventory_parent_annotated:
+    description: Place a sack and an urn. Use a trailing predicate to apply the inventory child only to the sack.
+    guards:
+      - when:
+          - [time, hour, range, 6, 20, exclusive]
+        actions:
+          - place:
+              - ["Balmora, Eight Plates", "com_sack_01", [1070.0, 900.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+              - ["Balmora, Eight Plates", "urn_01", [1080.0, 910.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+            actions:
+              - inventory:
+                  - [{ "iron dagger": [add, 5] }, [exclude, urn_01]]

@@ -1,0 +1,18 @@
+# Structural conversion of Examples/StaticModule.yaml; NOT an installable patch.
+# Upstream deliberately supplies nonexistent source/replacement mesh paths.
+# Replace all four paths with installed assets for supported source types before use.
+# Native region restrictions AND with name/coordinate includes, while SSS ORs
+# its three location filters. Two disjoint selections preserve the source union.
+version: 0
+name: SSS contextual static module authoring template
+variants:
+  contextual_replacement:
+    actions:
+      - attach:
+          - [{region: "ashlands region"}, "totallyFake1.nif", "some_real/file1.nif"]
+          - [{region: "ashlands region"}, "totallyFake2.nif", "some_real/file2.nif"]
+        disableOriginal: true
+      - attach:
+          - [{match: "*dagoth ur*", coords: [[0, 0], [0, -1]], exclude: {region: "ashlands region"}}, "totallyFake1.nif", "some_real/file1.nif"]
+          - [{match: "*dagoth ur*", coords: [[0, 0], [0, -1]], exclude: {region: "ashlands region"}}, "totallyFake2.nif", "some_real/file2.nif"]
+        disableOriginal: true

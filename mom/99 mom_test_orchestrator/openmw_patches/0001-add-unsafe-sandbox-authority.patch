@@ -1,0 +1,263 @@
+From: MOM Harness <mom-harness@example.invalid>
+Subject: [PATCH] lua: add explicit unsafe sandbox authority
+
+Derived from openmw_build_scripts patch 13858be6fd6ef1075b5dae9920fad0ff93a30839.
+Rebased as one self-contained patch against OpenMW
+ea120a9f72d3d3064fc09c38b7ae3f50a43e4a6e.
+
+Unsafe standard libraries must not appear in ordinary sandboxes merely because
+the runtime provides them. Add a default-off setting and publish selected
+libraries only through select("sandbox.bypass"). This is harness-only debugging
+and benchmarking authority, not a production sandbox API.
+
+diff --git a/apps/components_tests/lua/testlua.cpp b/apps/components_tests/lua/testlua.cpp
+index 940fa9b9c546bc821e6c32beca47859f48ce4b0a..a81966fdbbac4235d70ee8ca1e4534fc1786f4a4 100644
+--- a/apps/components_tests/lua/testlua.cpp
++++ b/apps/components_tests/lua/testlua.cpp
+@@ -40,6 +40,14 @@ return {
+         rawset(t, 'b', 3)
+         return t.b
+     end,
++    sandboxBypassHasIo = function()
++        local bypass = select('sandbox.bypass')
++        return type(bypass) == 'table' and type(bypass.io) == 'table'
++    end,
++    selectPassthrough = function()
++        local first, second = select(2, 'a', 'b', 'c')
++        return first .. second
++    end,
+     print = print,
+ 
+     -- should throw an error
+@@ -114,6 +122,24 @@ return {
+         EXPECT_EQ(LuaUtil::call(script1["get"]).get<int>(), 45);
+     }
+ 
++    TEST_F(LuaStateTest, UnsafeStdlibBypassIsDisabledByDefault)
++    {
++        const sol::table script = mLua.runInNewSandbox(VFS::Path::Normalized(testsPath));
++
++        EXPECT_THROW(LuaUtil::call(script["sandboxBypassHasIo"]), std::runtime_error);
++    }
++
++    TEST_F(LuaStateTest, UnsafeStdlibBypassRequiresOptInAndPreservesSelect)
++    {
++        LuaUtil::LuaStateSettings settings;
++        settings.mUnsafeStdlibAccess = true;
++        LuaUtil::LuaState lua(mVFS.get(), &mCfg, settings);
++        const sol::table script = lua.runInNewSandbox(VFS::Path::Normalized(testsPath));
++
++        EXPECT_TRUE(LuaUtil::call(script["sandboxBypassHasIo"]).get<bool>());
++        EXPECT_EQ(LuaUtil::call(script["selectPassthrough"]).get<std::string>(), "bc");
++    }
++
+     TEST_F(LuaStateTest, ToString)
+     {
+         EXPECT_EQ(LuaUtil::toString(sol::make_object(mLua.unsafeState(), 3.14)), "3.14");
+diff --git a/apps/openmw/mwlua/luamanagerimp.cpp b/apps/openmw/mwlua/luamanagerimp.cpp
+index 004d4f6180a3a1411e0eec915f5cd7ab5e243410..3919b6a36b06c2877a90fda8a8e39f2998de959f 100644
+--- a/apps/openmw/mwlua/luamanagerimp.cpp
++++ b/apps/openmw/mwlua/luamanagerimp.cpp
+@@ -72,7 +72,8 @@ namespace MWLua
+         return { .mInstructionLimit = Settings::lua().mInstructionLimitPerCall,
+             .mMemoryLimit = Settings::lua().mMemoryLimit,
+             .mSmallAllocMaxSize = Settings::lua().mSmallAllocMaxSize,
+-            .mLogMemoryUsage = Settings::lua().mLogMemoryUsage };
++            .mLogMemoryUsage = Settings::lua().mLogMemoryUsage,
++            .mUnsafeStdlibAccess = Settings::lua().mUnsafeStdlibAccess };
+     }
+ 
+     LuaManager::LuaManager(const VFS::Manager* vfs, const std::filesystem::path& libsDir)
+diff --git a/components/lua/luastate.cpp b/components/lua/luastate.cpp
+index aa2f93d1c74dfdc29eeb4b60664a55a6b4a52055..a9e81f9b705daa4e420f8deb3d3d5e668ea63095 100644
+--- a/components/lua/luastate.cpp
++++ b/components/lua/luastate.cpp
+@@ -4,6 +4,7 @@
+ #include <luajit.h>
+ #endif // NO_LUAJIT
+ 
++#include <cstring>
+ #include <filesystem>
+ #include <fstream>
+ 
+@@ -59,6 +60,108 @@ namespace LuaUtil
+         "tonumber", "tostring", "type", "unpack", "xpcall", "rawequal", "rawget", "rawset", "setmetatable" };
+     static const std::string safePackages[] = { "coroutine", "math", "string", "table", "utf8" };
+ 
++    namespace
++    {
++        constexpr char sandboxBypassName[] = "sandbox.bypass";
++
++        int absoluteIndex(lua_State* state, int index)
++        {
++            if (index > 0 || index <= LUA_REGISTRYINDEX)
++                return index;
++            return lua_gettop(state) + index + 1;
++        }
++
++        void setFieldFromGlobalIfPresent(lua_State* state, int tableIndex, const char* globalName)
++        {
++            tableIndex = absoluteIndex(state, tableIndex);
++            lua_getglobal(state, globalName);
++            if (lua_isnil(state, -1))
++                lua_pop(state, 1);
++            else
++                lua_setfield(state, tableIndex, globalName);
++        }
++
++        void setFfiFieldIfAvailable(lua_State* state, int tableIndex)
++        {
++            tableIndex = absoluteIndex(state, tableIndex);
++            lua_getglobal(state, "require");
++            if (!lua_isfunction(state, -1))
++            {
++                lua_pop(state, 1);
++                return;
++            }
++
++            lua_pushliteral(state, "ffi");
++            if (lua_pcall(state, 1, 1, 0) != 0)
++            {
++                lua_pop(state, 1);
++                return;
++            }
++
++            if (lua_isnil(state, -1))
++                lua_pop(state, 1);
++            else
++                lua_setfield(state, tableIndex, "ffi");
++        }
++
++        void pushSandboxBypassTable(lua_State* state)
++        {
++            lua_createtable(state, 0, 10);
++            const int tableIndex = absoluteIndex(state, -1);
++
++            setFieldFromGlobalIfPresent(state, tableIndex, "collectgarbage");
++            setFieldFromGlobalIfPresent(state, tableIndex, "require");
++            setFieldFromGlobalIfPresent(state, tableIndex, "package");
++            setFieldFromGlobalIfPresent(state, tableIndex, "io");
++            setFieldFromGlobalIfPresent(state, tableIndex, "os");
++            setFieldFromGlobalIfPresent(state, tableIndex, "debug");
++            setFieldFromGlobalIfPresent(state, tableIndex, "bit");
++            setFieldFromGlobalIfPresent(state, tableIndex, "bit32");
++            setFieldFromGlobalIfPresent(state, tableIndex, "jit");
++            setFfiFieldIfAvailable(state, tableIndex);
++        }
++
++        bool isSandboxBypassRequest(lua_State* state)
++        {
++            size_t length = 0;
++            const char* value = lua_tolstring(state, 1, &length);
++            return value != nullptr && length == sizeof(sandboxBypassName) - 1
++                && std::memcmp(value, sandboxBypassName, sizeof(sandboxBypassName) - 1) == 0;
++        }
++
++        int sandboxBypassSelect(lua_State* state)
++        {
++            const int arguments = lua_gettop(state);
++            if (arguments == 1 && lua_type(state, 1) == LUA_TSTRING && isSandboxBypassRequest(state))
++            {
++                lua_pushvalue(state, lua_upvalueindex(2));
++                return 1;
++            }
++
++            lua_pushvalue(state, lua_upvalueindex(1));
++            lua_insert(state, 1);
++            lua_call(state, arguments, LUA_MULTRET);
++            return lua_gettop(state);
++        }
++
++        void installSandboxStdlibBypass(lua_State* state, bool enabled)
++        {
++            if (!enabled)
++                return;
++
++            lua_getglobal(state, "select");
++            if (!lua_isfunction(state, -1))
++            {
++                lua_pop(state, 1);
++                return;
++            }
++
++            pushSandboxBypassTable(state);
++            lua_pushcclosure(state, sandboxBypassSelect, 2);
++            lua_setglobal(state, "select");
++        }
++    }
++
+     static constexpr int64_t countHookStep = 1000;
+ 
+     bool LuaState::sProfilerEnabled = true;
+@@ -197,6 +300,11 @@ namespace LuaUtil
+             sol.open_libraries(sol::lib::jit);
+ #endif // NO_LUAJIT
+ 
++            if (mSettings.mUnsafeStdlibAccess)
++                sol.open_libraries(sol::lib::package, sol::lib::io);
++
++            installSandboxStdlibBypass(sol.lua_state(), mSettings.mUnsafeStdlibAccess);
++
+             sol["math"]["randomseed"](static_cast<unsigned>(std::time(nullptr)));
+             sol["math"]["randomseed"] = [] {};
+ 
+diff --git a/components/lua/luastate.hpp b/components/lua/luastate.hpp
+index 4ec8a103206619d696f0db1764e90805da711759..8dd3a5cdd63005d36959ec775b7831c62fdb547e 100644
+--- a/components/lua/luastate.hpp
++++ b/components/lua/luastate.hpp
+@@ -35,6 +35,7 @@ namespace LuaUtil
+         uint64_t mMemoryLimit = 0; // 0 is unlimited
+         uint64_t mSmallAllocMaxSize = 1024 * 1024; // big default value efficiently disables memory tracking
+         bool mLogMemoryUsage = false;
++        bool mUnsafeStdlibAccess = false;
+     };
+ 
+     class LuaState;
+diff --git a/components/settings/categories/lua.hpp b/components/settings/categories/lua.hpp
+index 88d74b2d1f9afa1e58807b4186ae10bbda838d82..406e62921a64b76e85431998b567f473249c0db0 100644
+--- a/components/settings/categories/lua.hpp
++++ b/components/settings/categories/lua.hpp
+@@ -21,6 +21,7 @@ namespace Settings
+         SettingValue<bool> mLuaDebug{ mIndex, "Lua", "lua debug" };
+         SettingValue<int> mLuaNumThreads{ mIndex, "Lua", "lua num threads", makeEnumSanitizerInt({ 0, 1 }) };
+         SettingValue<bool> mLuaProfiler{ mIndex, "Lua", "lua profiler" };
++        SettingValue<bool> mUnsafeStdlibAccess{ mIndex, "Lua", "unsafe stdlib access" };
+         SettingValue<std::uint64_t> mSmallAllocMaxSize{ mIndex, "Lua", "small alloc max size" };
+         SettingValue<std::uint64_t> mMemoryLimit{ mIndex, "Lua", "memory limit" };
+         SettingValue<bool> mLogMemoryUsage{ mIndex, "Lua", "log memory usage" };
+diff --git a/docs/source/reference/modding/settings/lua.rst b/docs/source/reference/modding/settings/lua.rst
+index 0e22b37bb43d025d6fdbc342e66a69f35a4edcf0..ce1cc34612c664be7e9c54668cef54dcd74522e6 100644
+--- a/docs/source/reference/modding/settings/lua.rst
++++ b/docs/source/reference/modding/settings/lua.rst
+@@ -28,6 +28,16 @@ Lua Settings
+ 
+    Enables Lua profiler.
+ 
++.. omw-setting::
++   :title: unsafe stdlib access
++   :type: boolean
++   :range: true, false
++   :default: false
++
++   Exposes unsafe standard libraries through ``select("sandbox.bypass")``.
++   Intended only for debugging and benchmarking.
++   Disables part of the Lua sandbox when enabled.
++
+ .. omw-setting::
+    :title: small alloc max size
+    :type: int
+diff --git a/files/settings-default.cfg b/files/settings-default.cfg
+index a9d15a1c7921606b33a3325571a6334c973d7304..2147ddbde746e29bc58dfab3489f13d060760d3e 100644
+--- a/files/settings-default.cfg
++++ b/files/settings-default.cfg
+@@ -1196,6 +1196,10 @@ lua num threads = 1
+ # Enable Lua profiler
+ lua profiler = false
+ 
++# Expose unsafe standard libraries to Lua scripts through select("sandbox.bypass").
++# This disables part of the Lua sandbox and is intended only for debugging/testing.
++unsafe stdlib access = false
++
+ # No ownership tracking for allocations below or equal this size.
+ small alloc max size = 1024
+ 

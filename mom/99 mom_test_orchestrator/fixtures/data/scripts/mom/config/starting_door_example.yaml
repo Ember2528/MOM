@@ -1,0 +1,10 @@
+version: 0
+name: Starting door convergence
+variants:
+  starting_door:
+    guards:
+      - when:
+          - [time, hour, range, 8, 10, exclusive]
+        actions:
+          - modify:
+              - ["Balmora, Eight Plates", "rent_balmora_eight_door, (960.696, 1020.348, -256.000)", { position: { by: [24, 0, 0] }, rotation: { by: { yaw: 30 } } }]

@@ -1,0 +1,8 @@
+name: MOM mesh fallback fixture
+variants:
+  'f/furn_de_tapestry_01.nif':
+    meshes: ['f/furn_de_tapestry_02.nif']
+weights:
+  default: [1, 0]
+  interiors:
+    'Ald-ruhn, Guild of Mages': {w: [0, 1]}

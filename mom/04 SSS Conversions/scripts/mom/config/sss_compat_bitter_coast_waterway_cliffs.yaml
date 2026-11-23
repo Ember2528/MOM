@@ -1,0 +1,19 @@
+# Native adaptation of SSS MOMW/BitterCoastWaterway_CliffFix.yaml.
+# Source: https://github.com/DreamWeave-MP/S3ctors-S3cret-St4sh/blob/5e16c717f9524a9ab049e3557ccf04ab4cca9a86/content/static_switching_system/Examples/Compatibility/MOMW/BitterCoastWaterway_CliffFix.yaml
+# Exact references/provenance are retained; cell restrictions use MOM origin cells.
+# Permanent placement intent; see COMPATIBILITY_CONVERSIONS.md for lifecycle,
+# rotation composition, plugin gates and existing-save limitations.
+version: 0
+name: "SSS conversion: Bitter Coast Waterway Cliff Fix"
+variants:
+  placement_fix:
+    requires: ["Bitter Coast Waterway.esp"]
+    actions:
+      - modify:
+          - [{coords: [-4, -8]}, {ref: ["Bitter Coast Waterway.esp", 114]}, {position: [-26698.402, -59540.223, 1355.718], rotation: {yaw: 16.04445976, pitch: 14.294888732, roll: -7.597638103}}]
+      - modify:
+          - [{coords: [-5, -8]}, {ref: ["Bitter Coast Waterway.esp", 204]}, {enabled: false}]
+      - modify:
+          - [{coords: [-5, -7]}, {ref: ["Bitter Coast Waterway.esp", 165]}, {position: [-33222.777, -56318.543, 1386.3762], rotation: {yaw: 17.188734, pitch: 0, roll: 0}, scale: 2}]
+      - modify:
+          - [{coords: [-5, -7]}, {ref: ["Bitter Coast Waterway.esp", 187]}, {position: [-35494.766, -56488.938, 1006.57935], rotation: {yaw: 57.29578, pitch: 0, roll: 0}, scale: 2}]

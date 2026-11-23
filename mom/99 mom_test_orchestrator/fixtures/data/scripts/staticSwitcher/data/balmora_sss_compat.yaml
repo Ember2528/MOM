@@ -1,0 +1,12 @@
+log_name: Balmora SSS compat harness
+
+exterior_cells:
+  - x: -3
+    y: -2
+
+replace_meshes:
+  'f\Furn_DE_signpost_04.nif': 'f\Furn_De_Tapestry_03.NIF'
+  'f\Furn_DE_signpost_02.nif': 'f\Furn_De_Tapestry_04.NIF'
+
+ignore_records:
+  - furn_de_signpost_02

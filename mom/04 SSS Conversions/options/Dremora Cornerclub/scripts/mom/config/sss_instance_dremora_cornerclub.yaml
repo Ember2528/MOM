@@ -1,0 +1,11 @@
+# SSS intent conversion: InstanceModifier_ADremoraWalksIntoACornerclub.yaml.
+# Source snapshot and differences: 04 SSS Conversions/INSTANCE_CONVERSIONS.md.
+# This creates an actual hostile dremora; use a test save.
+version: 0
+name: "SSS conversion: A Dremora Walks Into a Cornerclub"
+description: "One persistent actor at the source's exact destination; native placement replaces the player-entry trigger."
+variants:
+  dremora_cornerclub:
+    actions:
+      - place:
+          - ["Balmora, South Wall Cornerclub", dremora, [291, 537, 261], {yaw: 90}]

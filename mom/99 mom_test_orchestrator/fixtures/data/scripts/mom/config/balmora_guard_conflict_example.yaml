@@ -1,0 +1,15 @@
+version: 0
+name: Balmora Guard Conflict Example
+description: A position-specific winner outranks a record-wide loser; only the loser requests scaling.
+
+variants:
+  balmora_guard_conflict_example:
+    guards:
+      - when:
+          - [time, hour, range, 20, 24, exclusive]
+        actions:
+          - modify:
+              - ["Balmora, Eight Plates", "misc_com_bottle_07, (-101.395, 663.972, -168.985)", { enabled: false }]
+
+          - modify:
+              - ["Balmora, Eight Plates", "misc_com_bottle_07", { enabled: false, scale: 0.8 }]

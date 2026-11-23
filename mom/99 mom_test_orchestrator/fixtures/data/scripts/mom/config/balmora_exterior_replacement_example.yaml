@@ -1,0 +1,13 @@
+version: 0
+name: Balmora Exterior Replacement Example
+description: Example daytime exterior replacement of one static crate lid in Balmora (-3, -2).
+
+variants:
+  balmora_exterior_replacement_example:
+    guards:
+      - when:
+          - [time, hour, range, 6, 20, exclusive]
+        actions:
+          - attach:
+              - [{ coords: [-3, -2] }, "furn_crate_lid_01", "furn_crate_open_01"]
+            disableOriginal: true

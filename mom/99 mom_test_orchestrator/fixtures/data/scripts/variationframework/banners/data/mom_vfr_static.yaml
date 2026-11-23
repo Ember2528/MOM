@@ -1,0 +1,9 @@
+name: MOM native static variation fixture
+supersede_static_switcher: true
+record_variants:
+  furn_de_tapestry_04:
+    meshes: ['f/furn_de_tapestry_03.nif']
+weights:
+  default: [1, 0]
+  interiors:
+    'Ald-ruhn, Guild of Mages': {w: [0, 1]}

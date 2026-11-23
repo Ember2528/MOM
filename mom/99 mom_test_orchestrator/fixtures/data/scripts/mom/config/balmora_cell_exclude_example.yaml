@@ -1,0 +1,11 @@
+version: 0
+name: Balmora Cell Exclude Example
+description: Example exact-cell selection with an explicit exclude that narrows a shared record id down to the Guild of Mages only.
+
+variants:
+  balmora_cell_exclude_example:
+    actions:
+      - modify:
+          - [{ exact: ["Balmora, Guild of Mages", "Balmora, Eight Plates"], exclude: { exact: "Balmora, Eight Plates" } }, "misc_de_pot_blue_01", { enabled: false }]
+      - place:
+          - ["Balmora, Eight Plates", "light_de_paper_lantern_off", [1200, 1750, -311], {yaw: 0, pitch: 0, roll: 0}]

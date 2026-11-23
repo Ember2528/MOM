@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 4,
+  "absoluteMicros": {
+    "process_cpu": {
+      "cold_runtime_bootstrap_256": 100000,
+      "idle_tick": 500,
+      "single_dirty_owner": 2000,
+      "event_fanout": 30000,
+      "guard_fragment_evaluation": 10,
+      "state_large_claim_component": 200,
+      "source_ir_deep_children_32": 1000,
+      "source_ir_wide_children_256": 7500,
+      "static_cell_queue": 6000,
+      "static_completed_cell_revisit": 500,
+      "broad_loaded_cell_audit": 2000,
+      "ledger_roundtrip_10k": 1000000,
+      "ledger_compact_10k": 500000,
+      "ledger_output_roundtrip_2k": 300000,
+      "save_encode": 75000,
+      "save_load": 75000,
+      "runtime_save": 75000,
+      "operation_journal_cycle": 750,
+      "container_transfer_protocol": 5000
+    },
+    "monotonic_wall": {}
+  },
+  "absoluteMemoryKb": {
+    "standalone": {
+      "Lua 5.5;jit=none;binary=3eab886a2dcd0f09362ed8fbd8f843b51bf0946270a87e48c46f9edb2e0d8dcb": {
+        "allocated": {
+          "cold_runtime_bootstrap_256": 1250,
+          "broad_loaded_cell_audit": 725,
+          "operation_journal_cycle": 16750
+        },
+        "retained": {
+          "cold_runtime_bootstrap_256": 1250,
+          "broad_loaded_cell_audit": 500,
+          "operation_journal_cycle": 625,
+          "state_large_claim_component": 1950
+        }
+      },
+      "Lua 5.5;jit=none;binary=a901fc8fe16f09d9a8d2e23947cc847ce1fc09fa6e0cb89ceec23d4566869d30": {
+        "allocated": {
+          "cold_runtime_bootstrap_256": 1250,
+          "broad_loaded_cell_audit": 725,
+          "operation_journal_cycle": 16750
+        },
+        "retained": {
+          "cold_runtime_bootstrap_256": 1250,
+          "broad_loaded_cell_audit": 500,
+          "operation_journal_cycle": 625,
+          "state_large_claim_component": 1950
+        }
+      }
+    },
+    "embedded": {},
+    "integration": {}
+  },
+  "comparison": {
+    "confidence": 0.95,
+    "bootstrapResamples": 10000,
+    "minimumSamples": 9,
+    "maximumRegressionRatio": 1.15,
+    "seed": 20260721
+  }
+}

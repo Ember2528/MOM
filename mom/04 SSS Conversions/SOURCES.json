@@ -1,0 +1,216 @@
+{
+  "upstream_repository": "https://github.com/DreamWeave-MP/S3ctors-S3cret-St4sh",
+  "upstream_commit": "5e16c717f9524a9ab049e3557ccf04ab4cca9a86",
+  "source_root": "content/static_switching_system",
+  "examined_date": "2026-11-14",
+  "mom_base_commit": "f514dde2a39cfc03decb85efeec9fde2a7ff5aeb",
+  "scope": "All YAML fixtures under Examples, plus the fixed-scale introductory rat test; external catalog mods are referenced, not redistributed.",
+  "examples": [
+    {
+      "path": "Examples/Compatibility/Alvazir/PopulatedVvardenfell_BalmoraWaterworks.yaml",
+      "sha256": "5134735a5a10daffe31914711c9ff012a7c42c8a2be5d9e9099d7ff892bbb781",
+      "comparison": "COMPATIBILITY_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/Compatibility/Alvazir/ValitysBitterCoast_TwinLamps.yaml",
+      "sha256": "220e5764658027f9f928672c03c988c7fd27ef7021a40bdf5c96007dc71dbe52",
+      "comparison": "COMPATIBILITY_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/Compatibility/MOMW/BCOM_ImmersiveImperialSkirt.yaml",
+      "sha256": "caf661766bc0289384463d1dcad712d7ca14250eef3d0819f7d7bfa1955f5b1b",
+      "comparison": "COMPATIBILITY_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/Compatibility/MOMW/BCOM_QCVL_Elayne.yaml",
+      "sha256": "5b9394f9999ce680081232fced9203cdefab7d8aca3918387a0512b231699044",
+      "comparison": "COMPATIBILITY_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/Compatibility/MOMW/BitterCoastWaterway_CliffFix.yaml",
+      "sha256": "353c710ca7360f1370858f0d7809747f5a5fd42cc14d9dbf99d2e57cf7dd438e",
+      "comparison": "COMPATIBILITY_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/Compatibility/MOMW/CuttingRoomFloor_BCOM_FarasChest.yaml",
+      "sha256": "0cf4031504021f82bf301dd1b6e7c77287c10bde6e34a5394608d42c6aa6ddb4",
+      "comparison": "COMPATIBILITY_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/Compatibility/MOMW/DungeonDetails_GrottoSeamFix.yaml",
+      "sha256": "1c1f3b63f184bdbf62a88f9d0b23d8c6a193d0361edabfabea3a38839dd7e120",
+      "comparison": "COMPATIBILITY_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/Compatibility/MOMW/ImmersiveMournhold_CornerTowers.yaml",
+      "sha256": "80635bb16c2ed004c2fc83d30df4cd24e2f362169092c985759d1875de7fe4c6",
+      "comparison": "COMPATIBILITY_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/Compatibility/MOMW/LittleLandscape_FoyadaSharpTeeth.yaml",
+      "sha256": "8f6c6845f7b65f6bea0beff3f260eb1c7c35ff125cc38ef7593d59584365f7a2",
+      "comparison": "COMPATIBILITY_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/Compatibility/MOMW/LittleLandscape_PathToPelagiad.yaml",
+      "sha256": "5d8091e8427fce2ce2d596368190fa17190c9eca466194d14e8c7ee72817c820",
+      "comparison": "COMPATIBILITY_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/Compatibility/MOMW/OdaiRiverUpper_StatueRemover.yaml",
+      "sha256": "aafd7fc7ef5b211d2fe8c97d94a3f0b0309539ee677041981edb27587fcc458c",
+      "comparison": "COMPATIBILITY_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/Compatibility/MOMW/RepopulatedMorrowind_WolverineHall.yaml",
+      "sha256": "5a8bc3870760678de690bcd09733c8d9fe73616f192d0116fc5e226d805364b9",
+      "comparison": "COMPATIBILITY_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/InstanceModifier_ADremoraWalksIntoACornerclub.yaml",
+      "sha256": "73fee360d3673e9750df5478fe6b478e1c6675c189693486707ab809f34831bc",
+      "comparison": "INSTANCE_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/InstanceModifier_BadWeatherHasConsequences.yaml",
+      "sha256": "3b00ed9fe045123c7453339a26493dbef4000d2eb4e715d6878451117650c399",
+      "comparison": "EXPERIMENT_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/InstanceModifier_CaiusClocksOut.yaml",
+      "sha256": "a6350172f39a1f735645e78de9fd075d75d6103568ac747124aa2963c3cc2ec5",
+      "comparison": "INSTANCE_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/InstanceModifier_CaiusSchedule.yaml",
+      "sha256": "028610f286465925c07c721dd292644f99bba343386ca839dcaf95c3f358ddd6",
+      "comparison": "INSTANCE_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/InstanceModifier_CaiusTakesWeekendsOff.yaml",
+      "sha256": "c6326ae416a4ef4d77f2351f15727670992d1873d84eedbd2da80cf76d20a518",
+      "comparison": "EXPERIMENT_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/InstanceModifier_CreatureScale.yaml",
+      "sha256": "14355e512a4e4328abec212a245f4d4b694e3d83e201a68f7a3e0ef098d7ba6d",
+      "comparison": "INSTANCE_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/InstanceModifier_DeadWalkAgain.yaml",
+      "sha256": "a22280f216500781d41b847557d5b14a7d6b4e55253af97c2428203ae27372fd",
+      "comparison": "INSTANCE_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/InstanceModifier_DiminutiveCaius.yaml",
+      "sha256": "659d2f204a14a9fedf6717d6711b4154b3f972abed7c4957d0f1be8178ab18e1",
+      "comparison": "INSTANCE_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/InstanceModifier_DoorKnowsWhatYoureWearing.yaml",
+      "sha256": "0af36c6f1b55c2be70d3a8c8dc17cf085a8b9ae928c31ea6bc1016fe08095d6d",
+      "comparison": "EXPERIMENT_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/InstanceModifier_DynamicDungeonTraps.yaml",
+      "sha256": "f5a3147e08a547be0bc375752b59cdcf73c5f084f9e2705da20b19604b0073d8",
+      "comparison": "INSTANCE_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/InstanceModifier_GlassEbonyRemoval.yaml",
+      "sha256": "8c8bf82d797b28715e21da5e4b1af7a13254417c800d8d66fa879951ca7438e1",
+      "comparison": "INSTANCE_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/InstanceModifier_HarderLocks.yaml",
+      "sha256": "a71df1f5c4508747f1169fc75ae6002e089ee58d538037aca8e5a4db49518c31",
+      "comparison": "INSTANCE_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/InstanceModifier_HouseMoves.yaml",
+      "sha256": "4ef890036e624d36be39ac3c69dac4b5aac6bec661fbda3e1ce69dba1c3bbd31",
+      "comparison": "EXPERIMENT_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/InstanceModifier_LowHealthMakesVvardenfellWorse.yaml",
+      "sha256": "9fae2a1c9b1c2338147aac751ea4fab5315a3b25e3d70161b82f9635219fdaa1",
+      "comparison": "EXPERIMENT_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/InstanceModifier_MudcrabReinforcements.yaml",
+      "sha256": "cc486464ad50b08423007e4245e4404c9ef32ac8d31d663e28d5c2f761baf7ec",
+      "comparison": "INSTANCE_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/InstanceModifier_MudcrabsLikeShinyThings.yaml",
+      "sha256": "6628785785738e6fc09435f2e3db766c0eb0aa054f08bfa419c9d88d85f9a7ae",
+      "comparison": "INSTANCE_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/InstanceModifier_NecromanticCompoundInterest.yaml",
+      "sha256": "01aa58760061e4112c4f9f57fa7f6169b686866f0de152c85c52746874f2f8f2",
+      "comparison": "EXPERIMENT_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/InstanceModifier_RatsInTheLockbox.yaml",
+      "sha256": "f2a3770c4d8feb9af77c6694b465ffba47ff83fa64f7caea3eb24c551292811c",
+      "comparison": "INSTANCE_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/InstanceModifier_SixthHouseFalls.yaml",
+      "sha256": "426fd35024bd550e6354f5e40c798ab097292f22ef3e6db534eec34a6dd4acc4",
+      "comparison": "INSTANCE_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/InstanceModifier_SoundTheAlarm.yaml",
+      "sha256": "fe95d731fbf0304ebf437329baf755d98873b2bfb1dbc9e43c40579446ae14ee",
+      "comparison": "INSTANCE_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/InstanceModifier_StormAtronachsLastWord.yaml",
+      "sha256": "8a107b48263a7a075d9a116b7669d581a8a29885c0d1b76241e9100c132bbe5b",
+      "comparison": "INSTANCE_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/InstanceModifier_TombSpiceUp.yaml",
+      "sha256": "3d8992706bc03c46e4f1fe29907277d472a6088787470f6cdcc4d7dc2db16502",
+      "comparison": "INSTANCE_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/InstanceModifier_WhileYouWereStandingThere.yaml",
+      "sha256": "79f8f25195233a1b8d11d8a2f96c73f759c6f191b5fdb9a6f1655a8141603d7e",
+      "comparison": "INSTANCE_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/InstanceModifier_WildlifeVariety.yaml",
+      "sha256": "3f0ead159fdc894b65e6538f2a1473927f4fc1a9800042da31142f8715122ad0",
+      "comparison": "INSTANCE_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/InstanceModifier_YouProbablyWantLua.yaml",
+      "sha256": "65dc72114b71141b78baa8008369aa490daac2fdf9042e4fb80bbc3706f4ab55",
+      "comparison": "EXPERIMENT_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/StaticModule.yaml",
+      "sha256": "373cfd3624804c62caab5e3f8972b1eeed0db698bf5275486f275c1a9c23d4b5",
+      "comparison": "STATIC_CONVERSIONS.md"
+    },
+    {
+      "path": "Examples/StaticModule_Advanced.yaml",
+      "sha256": "85c5882cc52a0c17be5f3bc776eb6b649739963a2df3b00618207386760ea069",
+      "comparison": "STATIC_CONVERSIONS.md"
+    }
+  ],
+  "reassessed_date": "2026-11-15",
+  "mom_reassessment_commit": "c57d1b03ddaeff058e646df1190f3af765ce3658",
+  "documentation_adaptations": [
+    {
+      "path": "docs/recipes/basic-static-replacement.md",
+      "sha256": "75b8051c490d684b0894e7e8e79de10e73cefe1a15aa1b59791ce1829c9ff423",
+      "comparison": "STATIC_CONVERSIONS.md",
+      "native_config": "options/Uniform Static Models/scripts/mom/config/sss_basic_uniform_static.yaml",
+      "adaptation": "Generic uniform replacement recipe using real vanilla Static meshes; the literal Creature excerpt remains runtime-only."
+    }
+  ]
+}

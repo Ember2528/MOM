@@ -1,0 +1,13 @@
+# Native adaptation of SSS MOMW/CuttingRoomFloor_BCOM_FarasChest.yaml.
+# Source: https://github.com/DreamWeave-MP/S3ctors-S3cret-St4sh/blob/5e16c717f9524a9ab049e3557ccf04ab4cca9a86/content/static_switching_system/Examples/Compatibility/MOMW/CuttingRoomFloor_BCOM_FarasChest.yaml
+# Exact references/provenance are retained; cell restrictions use MOM origin cells.
+# Permanent placement intent; see COMPATIBILITY_CONVERSIONS.md for lifecycle,
+# rotation composition, plugin gates and existing-save limitations.
+version: 0
+name: "SSS conversion: Cutting Room Floor - BCoM Fara's Chest"
+variants:
+  placement_fix:
+    requires: ["Cutting Room Floor - Jobs.esp", "Beautiful cities of Morrowind.ESP"]
+    actions:
+      - modify:
+          - ["Sadrith Mora, Fara's Hole in the Wall", {contentFile: "Cutting Room Floor - Jobs.esp", type: "Container", recordId: "de_p_chest_02_fara1"}, {rotation: {yaw: 325, pitch: 0, roll: 0}, position: [-120, -355, 395]}]

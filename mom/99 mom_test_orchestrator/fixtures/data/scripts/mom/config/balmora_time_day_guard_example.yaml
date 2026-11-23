@@ -1,0 +1,14 @@
+version: 0
+name: Balmora time day guard example
+description: Vanilla-only day-level time guard coverage in Eight Plates.
+
+variants:
+  balmora_time_day_weekend_guard:
+    description: Disable one exact Eight Plates redware pot only during weekend days using day-level time fields.
+    guards:
+      - when:
+          - [time, flags.isWeekend, true]
+          - [time, dayOfWeek, any, [1, 7]]
+        actions:
+          - modify:
+              - ["Balmora, Eight Plates", "misc_de_pot_redware_01, (-309.471, 959.126, -163.704)", { enabled: false }]

@@ -1,0 +1,48 @@
+version: 0
+name: Shared LOAD and GLOBAL source acceptance
+variants:
+  mixed:
+    requires: [Morrowind.esm]
+    requiresAny: [Tribunal.esm, mom_missing_phase_fixture.esp]
+    requiresNot: [mom_missing_phase_fixture.esp]
+    actions:
+      - record:
+          type: Book
+          id: bk_lustyargonianmaid
+          patch:
+            name: MOM mixed phase book
+            text: MOM shared content phase.
+            weight: 0.25
+      - record:
+          type: Static
+          id: mom_test_content_static
+          create: true
+          template: furn_de_tapestry_04
+          patch:
+            model: meshes/f/furn_de_tapestry_03.nif
+      - leveled:
+          type: CreatureLevelledList
+          id: ex_westgash_lev+0
+          patch:
+            chanceNone: 0
+          operations:
+            - op: append
+              entries:
+                - {id: rat, level: 65535}
+                - {id: rat, level: 65535}
+      - select:
+          type: Static
+        disableOriginal: true
+        attach:
+          - ["*", meshes/f/furn_de_tapestry_03.nif, meshes/f/furn_de_tapestry_03.nif]
+      - select:
+          type: Static
+        disableOriginal: true
+        filters: [[exclude, furn_de_tapestry_03]]
+        chance: 1
+        previsit: false
+        actions: []
+        attach:
+          - ["*", furn_de_tapestry_03, meshes/f/furn_de_tapestry_04.nif]
+      - place:
+          - ["Balmora, Guild of Mages", mom_test_content_static, [3400, 3300, -100], {yaw: 0}]

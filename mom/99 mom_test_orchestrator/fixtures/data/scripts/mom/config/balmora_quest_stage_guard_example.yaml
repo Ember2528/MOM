@@ -1,0 +1,12 @@
+version: 0
+name: Balmora Quest Stage Guard Example
+description: Example quest-stage guard using the Eight Plates rent door with a real quest id present in the harness load order.
+
+variants:
+  balmora_quest_stage_guard_example:
+    guards:
+      - when:
+          - [quest_stage, "FG_RatHunt", eq, 20]
+        actions:
+          - modify:
+              - ["Balmora, Eight Plates", "rent_balmora_eight_door, (960.696, 1020.348, -256.000)", { enabled: false }]

@@ -1,0 +1,9 @@
+# Source: SSS docs/getting-started/first-module.md, first successful test.
+# One-time intent; exact record selection, saved completion supplied by MOM.
+version: 0
+name: SSS introductory rat scale test
+variants:
+  first_test:
+    actions:
+      - modify:
+          - ["*", rat, {scale: {by: 1.25}}]

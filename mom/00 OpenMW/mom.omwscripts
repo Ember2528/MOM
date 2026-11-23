@@ -1,0 +1,15 @@
+# MOM has one mutating global runtime owned by the App entrypoint.
+GLOBAL: scripts/mom/mom.lua
+# Shared compiler's LOAD invocation and content execution.
+LOAD: scripts/mom/load.lua
+# Player watcher: monitors player state and sends events to the global MOM script.
+PLAYER: scripts/mom/local/player_watcher.lua
+# Local command handlers attached only when an action family needs a local API.
+CUSTOM: scripts/mom/local/kill.lua
+CUSTOM: scripts/mom/local/equip.lua
+
+# Lua global console (`luag`) support is exposed via the MOM interface.
+#   I.MOM.version
+#   I.MOM.selfcheck()
+#   I.MOM.compileReport()
+#   I.MOM.logLevel('debug'|'info'|'warn'|'error'|'trace'|'off')

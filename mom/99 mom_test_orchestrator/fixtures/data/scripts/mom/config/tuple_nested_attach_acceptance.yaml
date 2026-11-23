@@ -1,0 +1,31 @@
+version: 0
+name: Nested tuple attach acceptance
+variants:
+  nested_tuple_attach_acceptance:
+    guards:
+      - when:
+          - [time, hour, range, 6, 20, exclusive]
+        actions:
+          - place:
+              - ["Balmora, Eight Plates", "furn_de_tapestry_04", [2100, 1850, -311], { yaw: 0 }]
+              - ["Balmora, Eight Plates", "furn_sign_arms_01", [2200, 1850, -311], { yaw: 0 }]
+              - ["Balmora, Eight Plates", "crate_01", [2300, 1850, -311], { yaw: 0 }]
+              - ["Balmora, Guild of Mages", "furn_de_tapestry_04", [3000, 2700, -100], { yaw: 0 }]
+            actions:
+              - attach:
+                  - ['f\Furn_De_Tapestry_03.NIF', [20, 0, 0]]
+                disableOriginal: true
+                actions:
+                  - attach:
+                      - ["Balmora, Eight Plates", "furn_de_tapestry_04", 'f\Furn_De_Tapestry_02.NIF', [20, 0, 0]]
+                      - ["Balmora, Eight Plates", "furn_sign_arms_01", 'f\Furn_De_Tapestry_02.NIF', [20, 0, 0]]
+                      - ["Balmora, Eight Plates", "crate_01", 'f\Furn_De_Tapestry_02.NIF', [20, 0, 0]]
+                      - ["Balmora, Eight Plates", "barrel_01", 'f\Furn_De_Tapestry_01.NIF', [100, 0, 0]]
+                    disableOriginal: true
+                    actions:
+                      - attach:
+                          - ["Balmora, Eight Plates", 'f\Furn_De_Tapestry_02.NIF', 'f\Furn_De_Tapestry_01.NIF', [20, 0, 0]]
+                        disableOriginal: true
+          # A matching record in the right cell, but not an inherited output.
+          - place:
+              - ["Balmora, Eight Plates", "furn_de_tapestry_04", [2400, 1850, -311], { yaw: 0 }]

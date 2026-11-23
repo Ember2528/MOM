@@ -1,0 +1,25 @@
+version: 0
+name: Runtime Broad Loaded-Cell Scope Example
+description: >
+  Harness-only coverage for wildcard selections that must remain loaded-cell
+  scoped.
+
+variants:
+  fallback_wildcard_modify:
+    description: Wildcard and exterior-kind modifies must wait until matching cells are loaded.
+    guards:
+      - when:
+          - [time, hour, range, 11, 20, exclusive]
+        actions:
+          - select:
+              cell: "*"
+              recordId: furn_banner_temple_02
+            modify:
+              enabled: false
+          - select:
+              cell:
+                kind: exterior
+              recordId: furn_banner_temple_02
+            modify:
+              scale:
+                to: 0.85

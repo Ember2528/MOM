@@ -1,0 +1,14 @@
+version: 0
+name: Balmora Targeting Duplicates Example
+description: Example duplicate-record targeting in Eight Plates using exact keyed starting-position selectors from the vanilla cell data.
+
+variants:
+  balmora_targeting_duplicates_example:
+    guards:
+      - when:
+          - [time, hour, range, 6, 20, exclusive]
+        actions:
+          - modify:
+              - ["Balmora, Eight Plates", "misc_com_bottle_05, (-294.999, 484.871, -101.713)", { enabled: false }]
+              - ["Balmora, Eight Plates", "misc_com_bottle_05, (-309.109, 489.567, -101.836)", { enabled: false }]
+              - ["Balmora, Eight Plates", "misc_de_goblet_01, (-119.565, 616.176, -178.241)", { enabled: false }]

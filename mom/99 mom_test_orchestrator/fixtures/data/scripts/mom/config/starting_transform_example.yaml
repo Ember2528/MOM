@@ -1,0 +1,12 @@
+version: 0
+name: Starting transform convergence
+variants:
+  starting_transform:
+    guards:
+      - when:
+          - [time, hour, range, 4, 6, exclusive]
+        actions:
+          - modify:
+              - ["Balmora, Guild of Mages", "chest_small_01_ingredie", { position: { by: [48, -16, 8] } }]
+          - modify:
+              - ["Balmora, Guild of Mages", "chest_small_01_ingredie", { rotation: { by: { yaw: 45 } } }]

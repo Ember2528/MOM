@@ -1,0 +1,6 @@
+name: MOM authoritative exact-record keep fixture
+record_variants:
+  furn_de_tapestry_01:
+    meshes: ['f/furn_de_tapestry_02.nif']
+weights:
+  default: [1, 0]

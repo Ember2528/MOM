@@ -1,0 +1,21 @@
+version: 0
+name: Static nested attach inheritance
+variants:
+  static_nested_attach:
+    actions:
+      - place:
+          - ["Balmora, Eight Plates", "furn_de_tapestry_04", [1900.0, 960.0, -311.0], { yaw: 0.0 }]
+          - ["Balmora, Eight Plates", "furn_de_tapestry_04", [2000.0, 960.0, -311.0], { yaw: 0.0 }]
+        actions:
+          - attach:
+              - ['f\Furn_De_Tapestry_03.NIF', [20.0, 0.0, 0.0]]
+            actions:
+              - attach:
+                  - ['f\Furn_De_Tapestry_02.NIF', [20.0, 0.0, 0.0]]
+                actions:
+                  - modify:
+                      scale: { to: 1.2 }
+                    select:
+                      recordId: furn_de_tapestry_04
+                    filters:
+                      - [exclude, furn_de_tapestry_01]

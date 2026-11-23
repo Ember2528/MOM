@@ -1,0 +1,9 @@
+version: 0
+name: True minimum inventory acceptance
+variants:
+  ensure_gold:
+    guards:
+      - when: [[harness.toggle, inventory_ensure, true]]
+        actions:
+          - inventory:
+              - ["Balmora, Eight Plates", "crate_01_eggs, (-65.124, 305.476, 37.0)", {gold_001: [ensure, 10]}]

@@ -1,0 +1,15 @@
+version: 0
+name: Balmora Relocation Example
+description: Example guard-owned relocation between Guild of Mages and Eight Plates with a follow-up scale action that keeps targeting the moved chest by its original identity.
+
+variants:
+  balmora_relocation_example:
+    guards:
+      - when:
+          - [time, hour, range, 22, 24, exclusive]
+        actions:
+          - modify:
+              - ["Balmora, Guild of Mages", "chest_small_01_ingredie", { relocate: { cell: "Balmora, Eight Plates", position: [720.0, 910.0, -244.0], rotation: { yaw: 180.0 } } }]
+
+          - modify:
+              - ["Balmora, Guild of Mages", "chest_small_01_ingredie", { scale: 0.75 }]

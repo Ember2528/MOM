@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 2,
+  "profiles": {
+    "quick": {"processes":1,"samplesPerProcess":3,"warmupsPerProcess":1,"memoryEvidence":false},
+    "standard": {"processes":3,"samplesPerProcess":3,"warmupsPerProcess":1,"memoryEvidence":false},
+    "release": {"processes":5,"samplesPerProcess":5,"warmupsPerProcess":2,"memoryEvidence":false},
+    "memory": {"processes":1,"samplesPerProcess":3,"warmupsPerProcess":1,"memoryEvidence":true},
+    "profile": {"processes":1,"samplesPerProcess":300,"warmupsPerProcess":2,"memoryEvidence":false,"requiresSingleWorkload":true}
+  }
+}

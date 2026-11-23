@@ -1,0 +1,30 @@
+version: 0
+name: Restore Ienaso Adren
+description: Respawn Ienaso Adren in Ebernanit if she has been deleted by another mod.
+
+variants:
+  restore_ienaso_adren:
+    description: Ensure Ienaso Adren and the leveled Dremora encounter are present in Ebernanit, Shrine.
+    requires:
+      - imperialcultexpansionv1.esp
+    actions:
+      - place:
+          - ["Ebernanit, Shrine", "ienaso adren", [-507.0, 1429.0, -1015.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+
+      - place:
+          - ["Ebernanit, Shrine", "in_dae_dremora_lev+0", [-482.0, 2127.0, -1003.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+
+    guards:
+      - when:
+          - [quest_stage, "IC_KnightAka", min, 10]
+        actions:
+          - kill:
+              - ["Ebernanit, Shrine", "ienaso adren"]
+
+      - when:
+          - [quest_stage, "IC_KnightAka", range, 10, 99]
+        actions:
+          - kill:
+              - ["Ebernanit, Shrine", "dremora"]
+              - ["Ebernanit, Shrine", "dremora_lord"]
+              - ["Ebernanit, Shrine", "daedroth"]

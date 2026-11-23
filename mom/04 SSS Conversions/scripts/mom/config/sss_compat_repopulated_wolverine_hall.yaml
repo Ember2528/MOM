@@ -1,0 +1,17 @@
+# Native adaptation of SSS MOMW/RepopulatedMorrowind_WolverineHall.yaml.
+# Source: https://github.com/DreamWeave-MP/S3ctors-S3cret-St4sh/blob/5e16c717f9524a9ab049e3557ccf04ab4cca9a86/content/static_switching_system/Examples/Compatibility/MOMW/RepopulatedMorrowind_WolverineHall.yaml
+# Exact references/provenance are retained; cell restrictions use MOM origin cells.
+# Permanent placement intent; see COMPATIBILITY_CONVERSIONS.md for lifecycle,
+# rotation composition, plugin gates and existing-save limitations.
+version: 0
+name: "SSS conversion: Repopulated Morrowind - The Wolverine Hall"
+variants:
+  placement_fix:
+    requires: ["RepopulatedMorrowind.ESM"]
+    actions:
+      - modify:
+          - ["Sadrith Mora, Wolverine Hall: Imperial Shrine", {ref: ["RepopulatedMorrowind.ESM", 771]}, {enabled: false}]
+      - modify:
+          - ["Wolverine Hall", {ref: ["RepopulatedMorrowind.ESM", 14]}, {position: [149646, 29724, 2052], rotation: {yaw: 308.433724, pitch: 0, roll: 0}}]
+      - modify:
+          - ["Wolverine Hall", {ref: ["RepopulatedMorrowind.ESM", 18]}, {position: [149407, 28228, 2052], rotation: {yaw: 166.157738, pitch: 0, roll: 0}}]

@@ -1,0 +1,37 @@
+version: 0
+name: Balmora Standalone Kill Actor Example
+description: >
+  Vanilla-only guarded placement plus standalone `kill_actor` coverage in Balmora, Eight Plates.
+  Mirrors the delayed quest-stage kill shape used by real static placement configs.
+  Creature records verified in Morrowind.esm with tes3cmd.
+
+variants:
+  balmora_standalone_kill_actor_guarded_place:
+    description: Place vanilla creatures during the day for standalone kill_actor coverage.
+    guards:
+      - when:
+          - [time, hour, range, 6, 20, exclusive]
+        actions:
+          - place:
+              - ["Balmora, Eight Plates", "Rat", [1110.0, 840.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+              - ["Balmora, Eight Plates", "kwama forager", [1130.0, 860.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+              - ["Balmora, Eight Plates", "mudcrab", [1150.0, 880.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+
+  balmora_standalone_kill_actor_single_guard:
+    description: Kill one placed actor when the quest-stage guard opens.
+    guards:
+      - when:
+          - [quest_stage, "FG_RatHunt", min, 10]
+        actions:
+          - kill:
+              - ["Balmora, Eight Plates", "Rat, (1110.0, 840.0, -311.0)"]
+
+  balmora_standalone_kill_actor_group_guard:
+    description: Kill a grouped placed-actor set across a quest-stage range.
+    guards:
+      - when:
+          - [quest_stage, "FG_RatHunt", range, 10, 99]
+        actions:
+          - kill:
+              - ["Balmora, Eight Plates", "kwama forager, (1130.0, 860.0, -311.0)"]
+              - ["Balmora, Eight Plates", "mudcrab, (1150.0, 880.0, -311.0)"]

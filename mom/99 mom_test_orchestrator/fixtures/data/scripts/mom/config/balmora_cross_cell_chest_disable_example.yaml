@@ -1,0 +1,15 @@
+version: 0
+name: Balmora Cross-Cell Chest Disable Example
+description: Example exact-keyed cross-cell morning guard that disables one Guild potion chest and one Eight Plates bottle, then restores both after the window closes.
+
+variants:
+  balmora_cross_cell_chest_disable_example:
+    guards:
+      - when:
+          - [time, hour, range, 6, 10, exclusive]
+        actions:
+          - modify:
+              - ["Balmora, Guild of Mages", "chest_01_v_potion_h_03, (571.757, -1351.239, -747.003)", { enabled: false }]
+
+          - modify:
+              - ["Balmora, Eight Plates", "misc_com_bottle_03, (-113.831, 563.600, -168.723)", { enabled: false }]

@@ -1,0 +1,41 @@
+version: 0
+name: Balmora Child Direct Payloads Example
+description: >
+  Harness-only coverage for child actions that inherit parent output targets
+  through direct payloads.
+
+variants:
+  balmora_child_direct_modify_payload:
+    description: Place a lantern, then scale it with a direct child modify payload
+    guards:
+      - when:
+          - [time, hour, range, 6, 20, exclusive]
+        actions:
+          - place:
+              - ["Balmora, Eight Plates", "light_de_paper_lantern_off", [1090.0, 920.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+            actions:
+              - modify:
+                  scale: { to: 1.2 }
+
+  balmora_child_direct_inventory_payload:
+    description: Place a barrel, then populate it with a direct child inventory payload
+    guards:
+      - when:
+          - [time, hour, range, 6, 20, exclusive]
+        actions:
+          - place:
+              - ["Balmora, Eight Plates", "barrel_01", [1160.0, 920.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+            actions:
+              - inventory:
+                  gold_001: [add, 7]
+
+  balmora_child_direct_kill_payload:
+    description: Place a rat, then kill it with a direct child kill payload
+    guards:
+      - when:
+          - [time, hour, range, 6, 20, exclusive]
+        actions:
+          - place:
+              - ["Balmora, Eight Plates", "rat", [1180.0, 920.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+            actions:
+              - kill: {}

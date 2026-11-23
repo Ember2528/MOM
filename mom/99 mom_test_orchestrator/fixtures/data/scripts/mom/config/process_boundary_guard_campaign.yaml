@@ -1,0 +1,66 @@
+version: 0
+name: Process Boundary Guard Campaign
+description: Isolated reversible and unavailable-provider save/restart fixtures.
+
+variants:
+  process_boundary_guard_campaign:
+    guards:
+      - when:
+          - [harness.toggle, campaign_reversible, true]
+        actions:
+          - place:
+              - ["Balmora, Eight Plates", "light_de_paper_lantern_off", [1200.0, 720.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+      - when:
+          - [harness.toggle, campaign_provider_active, true]
+        actions:
+          - place:
+              - ["Balmora, Eight Plates", "light_de_paper_lantern_off", [1280.0, 720.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+      - when:
+          - [harness.toggle, campaign_provider_inactive, true]
+        actions:
+          - place:
+              - ["Balmora, Eight Plates", "light_de_paper_lantern_off", [1360.0, 720.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+      - when:
+          - [harness.toggle, campaign_deferred, true]
+        actions:
+          - place:
+              - ["Balmora, Eight Plates", "light_de_paper_lantern_off", [1440.0, 720.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+      - when:
+          - [harness.toggle, campaign_logical_move, true]
+        actions:
+          - modify:
+              - ["Balmora, Guild of Mages", "chest_small_01_ingredie", { scale: 0.8, relocate: { cell: "Balmora, Eight Plates", position: [820.0, 860.0, -244.0], rotation: { yaw: 180.0 } } }]
+      - when:
+          - [harness.toggle, campaign_actor_spawn, true]
+        actions:
+          - place:
+              - ["Balmora, Eight Plates", "Rat", [1520.0, 720.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+      - when:
+          - [harness.toggle, campaign_actor_kill, true]
+        actions:
+          - kill:
+              - ["Balmora, Eight Plates", "Rat, (1520.0, 720.0, -311.0)"]
+      - when:
+          - [harness.toggle, campaign_variant_sources, true]
+        actions:
+          - place:
+              - ["Balmora, Eight Plates", "furn_de_rope_03", [1600.0, 800.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+              - ["Balmora, Eight Plates", "furn_de_rope_03", [1680.0, 800.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+      - when:
+          - [harness.toggle, campaign_variant_intent, true]
+        actions:
+          - attach:
+              - ["Balmora, Eight Plates", "furn_de_rope_03, (1600.0, 800.0, -311.0)", 'f\Furn_De_Bar_03.NIF']
+            disableOriginal: true
+      - when:
+          - [harness.toggle, campaign_variant_created, true]
+        actions:
+          - attach:
+              - ["Balmora, Eight Plates", "furn_de_rope_03, (1680.0, 800.0, -311.0)", 'f\Furn_De_Table_04.NIF']
+            disableOriginal: true
+      - when:
+          - [harness.toggle, campaign_container_transfer, true]
+        actions:
+          - attach:
+              - ["Balmora, Eight Plates", "de_p_chest_02_empty, (1118.174, 1444.821, -361.513)", "com_sack_01"]
+            disableOriginal: true

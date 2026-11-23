@@ -1,0 +1,62 @@
+version: 0
+name: Balmora Inventory Ops Example
+description: Vanilla-only coverage for inventory add, equip, unequip, remove, and guard-close revert.
+
+variants:
+  balmora_inventory_robe_replace:
+    description: Replace Ajira's common robe with an equipped exquisite robe for inventory operation coverage.
+    actions:
+      - inventory:
+          owners:
+            - ["Balmora, Guild of Mages", "ajira"]
+          items:
+            common_robe_05_a: [replace, exquisite_robe_01, equip]
+
+  balmora_inventory_morning_ring:
+    description: Add an unequipped ring to Ajira during the morning and remove it when the window closes.
+    guards:
+      - when:
+          - [time, hour, range, 6, 10, exclusive]
+        actions:
+          - inventory:
+              owners:
+                - ["Balmora, Guild of Mages", "ajira"]
+              items:
+                common_ring_01: [add, 1]
+
+  balmora_inventory_midday_ring_equip:
+    description: Add and equip Ajira's ring during the midday window.
+    guards:
+      - when:
+          - [time, hour, range, 10, 14, exclusive]
+        actions:
+          - inventory:
+              owners:
+                - ["Balmora, Guild of Mages", "ajira"]
+              items:
+                common_ring_01: [add, 1, equip]
+
+  balmora_inventory_afternoon_ring:
+    description: Add an unequipped ring to Ajira during the afternoon and remove it when the window closes.
+    guards:
+      - when:
+          - [time, hour, range, 14, 20, exclusive]
+        actions:
+          - inventory:
+              owners:
+                - ["Balmora, Guild of Mages", "ajira"]
+              items:
+                common_ring_01: [add, 1]
+
+  balmora_inventory_night_remove_unequip:
+    description: Remove Ajira's amulet and unequip the replacement robe during the night, then restore both.
+    guards:
+      - when:
+          - [time, hour, range, 20, 24, exclusive]
+        actions:
+          - inventory:
+              owners:
+                - ["Balmora, Guild of Mages", "ajira"]
+              items:
+                expensive_amulet_02: [remove]
+                exquisite_robe_01: [unequip]

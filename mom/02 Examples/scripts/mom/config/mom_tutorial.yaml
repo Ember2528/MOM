@@ -1,0 +1,9 @@
+version: 0
+name: Tutorial tapestry
+description: Add one tapestry to Balmora's Eight Plates using vanilla records.
+
+variants:
+  tutorial_tapestry:
+    actions:
+      - place:
+          - ["Balmora, Eight Plates", "furn_de_tapestry_04", [1900, 960, -311], {yaw: 0}]

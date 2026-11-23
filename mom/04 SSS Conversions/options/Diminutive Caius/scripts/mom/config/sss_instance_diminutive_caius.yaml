@@ -1,0 +1,24 @@
+# SSS conversion: InstanceModifier_DiminutiveCaius.yaml.
+# Exact plugin-local reference identity, with create-only-if-missing equipment.
+version: 0
+name: "SSS conversion: Diminutive Armored Caius"
+description: "Tiny armored Caius, selected by exact reference and equipped without duplicate additions."
+variants:
+  diminutive_caius:
+    requires: [Morrowind.esm]
+    actions:
+      - inventory:
+          - ["*", {ref: [Morrowind.esm, 67647]}, {
+              "imperial helmet armor": [ensure, 1, equip],
+              "imperial cuirass_armor": [ensure, 1, equip],
+              "imperial left pauldron": [ensure, 1, equip],
+              "imperial right pauldron": [ensure, 1, equip],
+              imperial_greaves: [ensure, 1, equip],
+              "imperial boots": [ensure, 1, equip],
+              "imperial left gauntlet": [ensure, 1, equip],
+              "imperial right gauntlet": [ensure, 1, equip],
+              "imperial shield": [ensure, 1, equip],
+              "imperial broadsword": [ensure, 1, equip]
+            }]
+      - modify:
+          - ["*", {ref: [Morrowind.esm, 67647]}, {scale: 0.1}]

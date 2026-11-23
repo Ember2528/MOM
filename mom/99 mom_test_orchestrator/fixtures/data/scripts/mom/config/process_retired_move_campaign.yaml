@@ -1,0 +1,13 @@
+version: 0
+name: Retired moving child process campaign
+variants:
+  retired_move_campaign:
+    guards:
+      - when:
+          - [harness.toggle, campaign_retired_move, true]
+        actions:
+          - place:
+              - ["Balmora, Eight Plates", "light_de_paper_lantern_off", [1800.0, 800.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+            actions:
+              - modify:
+                  relocate: { cell: "Balmora, Guild of Mages", position: [1800.0, 800.0, -311.0] }

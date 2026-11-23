@@ -1,0 +1,54 @@
+version: 0
+name: Balmora DSL Edge Cases Example
+description: >
+  Harness-only edge coverage for authored MOM DSL features using vanilla
+  Morrowind.esm Balmora data verified with tes3cmd.
+
+variants:
+  balmora_edge_static_previsit:
+    description: Test previsit and chance on an exact exterior target selected by coords, kind, and region.
+    requires:
+      - Morrowind.esm
+    requiresAny:
+      - Tribunal.esm
+      - Bloodmoon.esm
+    actions:
+      - previsit: true
+        chance: 1.0
+        modify:
+          - [{ coords: [-3, -2], kind: exterior, region: "West Gash Region" }, "furn_bannerd_wa_shop_balmoraraz, (-22657.215, -11492.133, 675.996)", { enabled: false }]
+      - select:
+          cell:
+            region: "West Gash Region"
+          recordId: furn_bannerd_wa_shop_balmoraraz
+        modify:
+          scale:
+            to: 0.75
+
+  balmora_edge_time_weather_scalars:
+    description: Combine scalar time guards and weather ID guards on one exterior signpost.
+    guards:
+      - when:
+          - [time, hour, min, 6]
+          - [time, hour, max, 20]
+          - [time, hour, any, [10, 11, 12]]
+          - [time, hour, not, [2, 3]]
+          - [weather, "West Gash Region", any, [4]]
+          - [weather, "West Gash Region", not, [0]]
+        actions:
+          - modify:
+              - [{ coords: [-3, -2], kind: exterior, region: "West Gash Region" }, "furn_de_signpost_02, (-22512.762, -13476.332, 645.224)", { enabled: false }]
+
+  balmora_edge_quest_scalars_and_filters:
+    description: Test quest-stage scalar operators, sibling filters, and match/kind cell selection.
+    guards:
+      - when:
+          - [quest_stage, "FG_RatHunt", min, 50]
+          - [quest_stage, "FG_RatHunt", max, 80]
+          - [quest_stage, "FG_RatHunt", range, 50, 80, inclusive]
+          - [quest_stage, "FG_RatHunt", any, [60]]
+          - [quest_stage, "FG_RatHunt", not, [10, 20]]
+        actions:
+          - filters: [upright, 25]
+            modify:
+              - [{ match: "Balmora, Eight*", kind: interior }, "misc_de_pot_green_01, (-306.213, 936.541, -120.932)", { enabled: false }]

@@ -1,0 +1,17 @@
+# Native adaptation of SSS MOMW/ImmersiveMournhold_CornerTowers.yaml.
+# Source: https://github.com/DreamWeave-MP/S3ctors-S3cret-St4sh/blob/5e16c717f9524a9ab049e3557ccf04ab4cca9a86/content/static_switching_system/Examples/Compatibility/MOMW/ImmersiveMournhold_CornerTowers.yaml
+# Exact references/provenance are retained; cell restrictions use MOM origin cells.
+# Permanent placement intent; see COMPATIBILITY_CONVERSIONS.md for lifecycle,
+# rotation composition, plugin gates and existing-save limitations.
+version: 0
+name: "SSS conversion: Immersive Mournhold - Corner Tower Remover"
+variants:
+  placement_fix:
+    requires: ["Immersive Mournhold.esp"]
+    actions:
+      - modify:
+          - ["Mournhold, Godsreach", {ref: ["Immersive Mournhold.esp", [1015, 1017, 1018, 1019, 1020, 1021, 1022]]}, {enabled: false}]
+      - modify:
+          - ["Mournhold, Great Bazaar", {ref: ["Immersive Mournhold.esp", [1606, 1607, 1608, 1609, 1610, 1611]]}, {enabled: false}]
+      - modify:
+          - ["Mournhold, Temple Courtyard", {ref: ["Immersive Mournhold.esp", [3935, 3976, 3977, 3978, 3979, 3980, 3981]]}, {enabled: false}]

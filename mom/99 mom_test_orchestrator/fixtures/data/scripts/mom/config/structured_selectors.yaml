@@ -1,0 +1,27 @@
+version: 0
+name: Structured selector acceptance
+variants:
+  exact_reference:
+    guards:
+      - when: [[harness.toggle, structured_reference, true]]
+        actions:
+          - modify:
+              - ["Balmora, Eight Plates", {ref: [Morrowind.esm, 484126]}, {scale: 0.75}]
+  relocated_reference:
+    guards:
+      - when: [[harness.toggle, structured_relocation, true]]
+        actions:
+          - modify:
+              - ["Balmora, Eight Plates", {ref: [Morrowind.esm, 56704]}, {relocate: {cell: "Balmora, Guild of Mages", position: [400, 400, 100]}}]
+  record_query:
+    guards:
+      - when: [[harness.toggle, structured_query, true]]
+        actions:
+          - modify:
+              - ["Balmora, Eight Plates", {type: Static, recordId: {match: "furn_de_tapestry*"}, contentFile: Morrowind.esm}, {scale: 0.8}]
+  mwscript_query:
+    guards:
+      - when: [[harness.toggle, structured_mwscript, true]]
+        actions:
+          - modify:
+              - ["Balmora, Eight Plates", {type: NPC, mwscript: Pub_Balmora_Eight}, {scale: 0.85}]

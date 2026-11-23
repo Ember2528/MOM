@@ -1,0 +1,19 @@
+version: 0
+name: Quests for Clans and Vampire Legends Patch
+description: Fix object placement conflicts in Vivec when using Quests for Clans and Vampire Legends with Vivec - God the City.
+
+variants:
+  quests_for_clans_and_vampire_legends_patch:
+    description: Reposition conflicting refs in Vivec and target exact original placements with startingPosition.
+    requires:
+      - quests for clans and vampire legends.esp
+      - vivec - god the city.esp
+    actions:
+      - modify:
+          - ["Vivec, Aurane Frernis: Apothecary", "sc_paper plain, (-58.645, 314.769, -99.912)", { position: { to: [66.786, 266.117, -51.807] } }]
+
+      - modify:
+          - ["Vivec, Aurane Frernis: Apothecary", "ingred_enchanted_seeds_elayne_u", { position: { to: [65.937, 262.079, -51.524] }, rotation: { to: { yaw: 337.081696 } } }]
+
+      - modify:
+          - ["Vivec, St. Olms Underworks", "vivicia_ber", { position: { to: [2435.505, 4501.829, 148.437] }, rotation: { to: { yaw: 239.678802 } } }]

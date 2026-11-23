@@ -1,0 +1,19 @@
+# INTENT ADAPTATION: InstanceModifier_CaiusClocksOut.yaml.
+# Enable ONE Caius schedule option. Source SSS already has hour+active triggers.
+# MOM supplies persistent origin-based ownership and reversal, not a new trigger.
+# Native relocate has no onGround option: the source's supplied coordinates are
+# used literally and must be checked against the installed interior geometry.
+version: 0
+name: "SSS intent adaptation: Caius Clocks Out"
+description: "Cornerclub from 20:00, home from 00:00 to 20:00; source coordinates without floor projection."
+variants:
+  caius_clocks_out:
+    guards:
+      - when: [[time, hour, min, 20]]
+        actions:
+          - modify:
+              - ["Balmora, Caius Cosades' House", "caius cosades", {relocate: {cell: "Balmora, South Wall Cornerclub", position: [291, 537, 261]}}]
+      - when: [[time, hour, max, 19]]
+        actions:
+          - modify:
+              - ["Balmora, Caius Cosades' House", "caius cosades", {relocate: {cell: "Balmora, Caius Cosades' House", position: [163, -228, 192]}}]

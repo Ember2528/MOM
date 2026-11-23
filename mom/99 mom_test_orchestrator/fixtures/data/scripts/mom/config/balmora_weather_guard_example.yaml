@@ -1,0 +1,12 @@
+version: 0
+name: Balmora Weather Guard Example
+description: Example weather guard using the Eight Plates exterior banner in Balmora (-3, -2). Disables the banner when weather is Rain (scriptId 4) in the West Gash Region.
+
+variants:
+  balmora_weather_guard_example:
+    guards:
+      - when:
+          - [weather, "West Gash Region", eq, 4]
+        actions:
+          - modify:
+              - [{ coords: [-3, -2] }, "furn_banner_tavern_eightplates, (-21726.260, -12176.084, 932.626)", { enabled: false }]

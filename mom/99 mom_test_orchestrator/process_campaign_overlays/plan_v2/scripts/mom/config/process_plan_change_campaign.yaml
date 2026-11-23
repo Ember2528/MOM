@@ -1,0 +1,12 @@
+version: 0
+name: Process Plan Change Campaign
+description: Replacement state plan for startup convergence restart coverage.
+
+variants:
+  process_plan_change_campaign:
+    guards:
+      - when:
+          - [harness.toggle, campaign_plan_change, true]
+        actions:
+          - place:
+              - ["Balmora, Eight Plates", "light_de_paper_lantern_off", [1920.0, 960.0, -311.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]

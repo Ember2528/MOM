@@ -1,0 +1,48 @@
+version: 0
+name: Balmora weather guard boundary stress
+description: Harness-only stress cases for weather guard boundary-skip behavior.
+
+variants:
+  balmora_weather_boundary_stress:
+    description: Many independent rain-guard owners in the Balmora exterior.
+    guards:
+      - when:
+          - [weather, "West Gash Region", eq, 4]
+        actions:
+          - place:
+              - [{ coords: [-3, -2] }, "light_de_paper_lantern_off", [-21680.0, -12240.0, 930.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+      - when:
+          - [weather, "West Gash Region", eq, 4]
+        actions:
+          - place:
+              - [{ coords: [-3, -2] }, "light_de_paper_lantern_off", [-21600.0, -12240.0, 930.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+      - when:
+          - [weather, "West Gash Region", eq, 4]
+        actions:
+          - place:
+              - [{ coords: [-3, -2] }, "light_de_paper_lantern_off", [-21520.0, -12240.0, 930.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+      - when:
+          - [weather, "West Gash Region", eq, 4]
+        actions:
+          - place:
+              - [{ coords: [-3, -2] }, "light_de_paper_lantern_off", [-21440.0, -12240.0, 930.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+      - when:
+          - [weather, "West Gash Region", eq, 4]
+        actions:
+          - place:
+              - [{ coords: [-3, -2] }, "light_de_paper_lantern_off", [-21680.0, -12160.0, 930.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+      - when:
+          - [weather, "West Gash Region", eq, 4]
+        actions:
+          - place:
+              - [{ coords: [-3, -2] }, "light_de_paper_lantern_off", [-21600.0, -12160.0, 930.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+      - when:
+          - [weather, "West Gash Region", eq, 4]
+        actions:
+          - place:
+              - [{ coords: [-3, -2] }, "light_de_paper_lantern_off", [-21520.0, -12160.0, 930.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]
+      - when:
+          - [weather, "West Gash Region", eq, 4]
+        actions:
+          - place:
+              - [{ coords: [-3, -2] }, "light_de_paper_lantern_off", [-21440.0, -12160.0, 930.0], { yaw: 0.0, pitch: 0.0, roll: 0.0 }]

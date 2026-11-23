@@ -1,0 +1,18 @@
+# INTENT ADAPTATION: InstanceModifier_SixthHouseFalls.yaml.
+# Fixed three-bone layout replaces the source's random 1–3 bones and offsets.
+# This is a reversible quest-state appearance, not SSS's permanent once latch:
+# lowering the quest below 50 restores the statues and withdraws MOM's bones.
+# Source SSS already has journal+active triggers; see INSTANCE_CONVERSIONS.md.
+version: 0
+name: "SSS intent adaptation: The Sixth House Falls"
+description: "At c3_destroydagoth >= 50 replace ash statues with three fixed bone pieces."
+variants:
+  sixth_house_falls:
+    guards:
+      - when: [[quest_stage, c3_destroydagoth, min, 50]]
+        actions:
+          - attach:
+              - ["*", furn_6th_ashstatue, furn_bone_01, [-24, -16, 0], {yaw: 15}]
+              - ["*", furn_6th_ashstatue, furn_bone_01, [24, -12, 0], {yaw: 135}]
+              - ["*", furn_6th_ashstatue, furn_bone_01, [0, 24, 0], {yaw: 255}]
+            disableOriginal: true

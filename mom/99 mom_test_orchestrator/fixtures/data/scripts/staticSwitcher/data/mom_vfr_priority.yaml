@@ -1,0 +1,3 @@
+replace_names: ['Ald-ruhn, Guild of Mages']
+replace_meshes:
+  'f/furn_de_tapestry_04.nif': 'f/furn_rug_02.nif'

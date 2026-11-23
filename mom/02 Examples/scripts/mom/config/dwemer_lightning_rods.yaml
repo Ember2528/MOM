@@ -1,0 +1,14 @@
+version: 0
+name: Dwemer Lightning Rods (OAAB)
+description: Replace Dwemer steam stacks with OAAB lightning rods when OAAB_Data.esm is loaded.
+
+variants:
+  oaab_lightning_rods:
+    description: Activate Dwemer lightning rod replacements when OAAB_Data.esm is active.
+    requires:
+      - OAAB_Data.esm
+    actions:
+      - attach:
+          - [{ kind: exterior }, "ex_dwrv_steamstack00", "ab_ex_dwrvsteamstackrod_a", [-128, 0, 1536]]
+        disableOriginal: true
+        filters: [upright, 25]

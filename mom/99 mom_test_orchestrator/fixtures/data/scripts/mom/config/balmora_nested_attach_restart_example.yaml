@@ -1,0 +1,39 @@
+version: 0
+name: Balmora Nested Attach Example
+description: Attach a mesh variant to each inherited output and modify it.
+
+variants:
+  balmora_nested_attach:
+    guards:
+      - when:
+          - [time, hour, range, 0, 6, exclusive]
+        actions:
+          - place:
+              - ["Balmora, Eight Plates", "furn_de_tapestry_04", [1400.0, 960.0, -311.0], { yaw: 0.0 }]
+              - ["Balmora, Eight Plates", "furn_de_tapestry_04", [1500.0, 960.0, -311.0], { yaw: 0.0 }]
+            actions:
+              - attach:
+                  - ['f\Furn_De_Tapestry_03.NIF', [20.0, 0.0, 0.0]]
+                actions:
+                  - attach:
+                      - ['f\Furn_De_Tapestry_02.NIF', [20.0, 0.0, 0.0]]
+                    actions:
+                      - modify:
+                          scale: { to: 1.2 }
+                        select:
+                          recordId: furn_de_tapestry_04
+                        filters:
+                          - [exclude, furn_de_tapestry_01]
+          - place:
+              - ["Balmora, Eight Plates", "furn_de_tapestry_04", [1400, 1160, -311], { yaw: 0 }]
+              - ["Balmora, Eight Plates", "furn_sign_arms_01", [1500, 1160, -311], { yaw: 0 }]
+              - ["Balmora, Eight Plates", "furn_de_tapestry_01", [1600, 1160, -311], { yaw: 0 }]
+              - ["Balmora, Eight Plates", "furn_de_signpost_02", [1700, 1160, -311], { yaw: 0 }]
+            actions:
+              - attach:
+                  - ['f\Furn_De_Tapestry_03.NIF', [20, 0, 0], [exclude, furn_sign_arms_01, furn_de_tapestry_01]]
+                  - ['f\Furn_De_Tapestry_02.NIF', [40, 0, 0], [exclude, furn_de_tapestry_01, furn_de_signpost_02]]
+                disableOriginal: true
+                actions:
+                  - modify:
+                      scale: { to: 1.25 }

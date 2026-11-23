@@ -1,0 +1,30 @@
+version: 0
+name: Balmora Inventory Revert Example
+description: >
+  Guard-owned standalone modify_inventory on a vanilla container to
+  exercise delta-aware reversibility. The scenario resolves the egg crate
+  before enabling its dedicated harness guard; other scenarios cannot activate
+  this fixture before its input exists. Closing the guard removes the added gold.
+
+variants:
+  balmora_inventory_revert:
+    description: Add gold after the scenario resolves the egg crate, then revert it.
+    guards:
+      - when:
+          - [harness.toggle, inventory_revert, true]
+        actions:
+          - inventory:
+              owners:
+                - ["Balmora, Eight Plates", "crate_01_eggs, (-65.124, 305.476, 37.0)"]
+              items:
+                gold_001: [add, 50]
+
+  balmora_inventory_owner_annotated:
+    description: Use a trailing predicate to exclude one Galbedir owner entry while an unfiltered sibling entry still applies.
+    guards:
+      - when:
+          - [time, hour, range, 20, 24, exclusive]
+        actions:
+          - inventory:
+              - ["Balmora, Guild of Mages", "galbedir", { gold_001: [add, 1] }, [exclude, galbedir]]
+              - ["Balmora, Guild of Mages", "galbedir", { gold_001: [add, 2] }]

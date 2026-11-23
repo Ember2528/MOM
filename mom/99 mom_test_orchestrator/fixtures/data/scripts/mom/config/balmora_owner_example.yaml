@@ -1,0 +1,12 @@
+version: 0
+name: Balmora Owner Example
+description: Example exact starting-position owner mutation on the Eight Plates rental chest.
+
+variants:
+  balmora_owner_example:
+    guards:
+      - when:
+          - [time, hour, range, 6, 20, exclusive]
+        actions:
+          - modify:
+              - ["Balmora, Eight Plates", "de_p_chest_02_empty, (1118.174, 1444.821, -361.513)", { owner: { clear: true } }]

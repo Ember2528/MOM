@@ -1,0 +1,16 @@
+version: 0
+name: Balmora Mesh Replace Then State Example
+description: Example static mesh replacement in the Guild of Mages followed by a state action that still targets the replaced refs by their original identity.
+
+variants:
+  balmora_mesh_replace_then_state_example:
+    actions:
+      - attach:
+          - ["Balmora, Guild of Mages", "furn_de_rope_03", 'f\Furn_De_Tapestry_03.NIF']
+        disableOriginal: true
+    guards:
+      - when:
+          - [time, hour, range, 20, 24, exclusive]
+        actions:
+          - modify:
+              - ["Balmora, Guild of Mages", "furn_de_rope_03", { enabled: false }]

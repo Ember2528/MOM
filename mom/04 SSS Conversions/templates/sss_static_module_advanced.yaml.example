@@ -1,0 +1,14 @@
+# Native shape for SSS Examples/StaticModule_Advanced.yaml.
+# The illustrative my_mod assets must exist before this can be installed.
+# Creature model replacement recreates actors from their base records; it does
+# not preserve live actor state. Dead/summoned sources are skipped.
+version: 0
+name: SSS creature mesh replacement template
+variants:
+  creature_models:
+    actions:
+      - attach:
+          - ["*", 'r\CliffRacer.NIF', 'my_mod\creatures\cliff_racer_replacer.NIF']
+          - ["*", 'r\Shalk.NIF', 'my_mod\creatures\shalk_replacer.NIF']
+        disableOriginal: true
+        filters: [exclude, cliff racer_diseased, shalk_blighted]
