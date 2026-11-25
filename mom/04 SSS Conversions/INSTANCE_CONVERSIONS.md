@@ -17,7 +17,7 @@ scale changes, live equipment and guarded effects at runtime automatically.
 Native `record` and `leveled` edits are useful for unconditional definition
 changes; their population-wide scope cannot inherit an instance rule's cell,
 player-state or event-time restrictions. See the
-[definition contract](../docs/AUTHORED_CONFIG_REFERENCE.md#definition-changes-and-reference-actions).
+[startup definition actions](../docs/AUTHORED_CONFIG_REFERENCE.md#startup-definition-actions).
 
 ## Important source-version distinction
 

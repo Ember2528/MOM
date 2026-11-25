@@ -1,20 +1,34 @@
-# MOM configuration reference
+# MOM Configuration Reference (`version: 0`)
 
-This reference describes native MOM YAML, `version: 0`. For a complete first
-patch and testing steps, read the [author guide](MOD_AUTHOR_GUIDE.md). Imported
-SSS, DOR and Variation Framework files keep their own formats; see
-[compatibility](COMPATIBILITY.md).
+Complete syntax reference for native MOM YAML files under `scripts/mom/config/`. For a step-by-step introduction, see the [Mod Author Guide](MOD_AUTHOR_GUIDE.md). For SSS, DOR, and VFR files, see the [Compatibility Guide](COMPATIBILITY.md).
 
-Examples below are fragments unless they include `version` and `variants`.
-Put action fragments inside a variant's `actions` or a guard's `actions`.
+Code blocks that omit `version: 0` and `variants:` are action fragments meant to go inside a variant's `actions` or a guard's `actions`.
 
-## Files and variants
+## Contents
 
-MOM reads `.yaml` and `.yml` files visible under `scripts/mom/config/` in
-OpenMW's virtual filesystem. Use distinct relative paths for independent files;
-OpenMW data-directory overrides still apply. Restart OpenMW after edits.
+- [Files & Variants](#files--variants)
+- [Action Structure](#action-structure)
+- [Declaration Admission](#declaration-admission)
+- [Startup Definition Actions (`record`, `leveled`, Auto-Promotion)](#startup-definition-actions)
+- [Selectors & Filters](#selectors--filters)
+  - [Cell Selectors](#cell-selectors)
+  - [Record & Keyed Selectors](#record--keyed-selectors)
+  - [Structured Selectors (`ref`, `contentFile`, `type`, `recordId`, `mwscript`)](#structured-selectors)
+  - [Filters & Row Predicates](#filters--row-predicates)
+- [Guard Blocks (`time`, `weather`, `quest_stage`)](#guard-blocks)
+- [Reference Actions](#reference-actions)
+  - [`place`](#place)
+  - [`attach` & Replacement Choices](#attach)
+  - [`modify`](#modify)
+  - [`inventory`](#inventory)
+  - [`kill`](#kill)
+- [Persistence & Error Handling](#persistence--error-handling)
 
-A complete file has this shape:
+---
+
+## Files & Variants
+
+MOM loads every `.yaml` and `.yml` file under `scripts/mom/config/` across enabled OpenMW data directories. Give each patch a unique relative path so OpenMW does not shadow another mod's file. Restart OpenMW after edits.
 
 ```yaml
 version: 0
@@ -30,110 +44,70 @@ variants:
     guards: []
 ```
 
-| Field | Accepted value |
+| Top-level field | Requirement |
 | --- | --- |
-| `version` | Required number `0`. |
+| `version` | Required; must be `0`. |
 | `name`, `description` | Optional strings. |
-| `variants` | Required map keyed by non-empty variant names. |
+| `variants` | Required map of non-empty variant names to variant objects. |
 
-A variant accepts only `description`, `requires`, `requiresAny`, `requiresNot`,
-`actions` and `guards`. Each content condition is an array of filenames, matched
-without regard to case: `requires` needs all, `requiresAny` needs at least one,
-and `requiresNot` needs none. An omitted condition imposes no restriction.
-`actions` and `guards` are arrays. Top-level `actions` and `guards` are invalid.
+A variant accepts only `description`, `requires`, `requiresAny`, `requiresNot`, `actions`, and `guards`. Top-level `actions` or `guards` outside `variants` are invalid.
 
-Every satisfied variant contributes work, in lexicographic variant-name order.
-The arrays within it preserve authored order. This ordering does not replace
-MOM's dependency and conflict handling.
+- **Plugin gates** (`requires` = all, `requiresAny` = at least one, `requiresNot` = none) take arrays of plugin filenames matched case-insensitively.
+- Every satisfied variant runs, evaluated in lexicographic variant-name order; actions inside each variant preserve authored order.
 
-## Action structure
+---
 
-An action has exactly one verb: `record`, `leveled`, `place`, `attach`, `modify`,
-`inventory` or `kill`. Reference actions can also have these shared fields,
-where supported by that action:
+## Action Structure
 
-| Field | Meaning |
+Every action declares **exactly one verb**: `record`, `leveled`, `place`, `attach`, `modify`, `inventory`, or `kill`.
+
+| Shared field | Supported on | Meaning |
+| --- | --- | --- |
+| `select` | Reference actions | Action-level target selector (`cell` plus structured query fields). |
+| `filters` | Reference actions except `place` | One predicate tuple or an array of predicate tuples. |
+| `chance` | Ref-targeting actions | Deterministic per-target probability (`0`–`1`, default `1`). |
+| `previsit` | Static ref/cell actions | Boolean; plan static work for known exterior cells before the player visits them. |
+| `actions` | `place`, `attach` | Array of child actions operating on this action's spawned outputs. |
+| `requires`, `requiresAny`, `requiresNot` | Any action | Compile-time plugin gates (single string or array of filenames). |
+| `admission` | Any action | Compile-time deterministic admission decision (see below). |
+| `key` | Single-row `place` | Permanent semantic identity for a keyed placement (enables in-place edits). |
+| `targetTypes` | `place` | Non-empty array of allowed OpenMW record types for the placed record. |
+| `onMissingTarget` | `record`, `leveled` | Set to `skip` to warn and skip when the target record or content store is missing. |
+| `disableOriginal` | `attach` | Boolean; disables the matched source reference after replacement. |
+| `transferContents` | `attach` | Boolean (default `true` for containers); `false` rejects selected `Container` sources. |
+
+Do not write action-level `id`, `type`, `match`, or `__`-prefixed keys. MOM derives semantic action IDs from meaning rather than filename or array position, so moving or reordering equivalent rules never replays finished work.
+
+Reference actions can target objects in three styles:
+1. **Full tuples:** each row begins with its cell, followed by target selector and payload.
+2. **Select blocks:** `modify`, `inventory`, and `kill` accept `select` paired with a direct payload object.
+3. **Child actions:** nested under a `place` or `attach` action's `actions` array; inherit parent outputs and may omit cell/source selectors.
+
+---
+
+## Declaration Admission
+
+`admission` makes a single compile-time decision for the whole action before execution planning. It is distinct from per-target `chance` and from runtime `guards`.
+
+| Field | Value |
 | --- | --- |
-| `select` | Narrow targets with `cell` and the reference/record query fields below. |
-| `filters` | One predicate tuple or an array of predicate tuples. |
-| `chance` | Deterministic per-target probability from `0` to `1`, default `1`. Nontrivial probability requires a ref-targeting action. |
-| `previsit` | Boolean request to plan static work for known exterior cells before a player visit. |
-| `actions` | Child actions, supported on `place` and `attach`. |
-| `requires`, `requiresAny`, `requiresNot` | Compile-time content conditions on one action; each accepts a filename or array, with the same all/any/none meaning as variants. |
-| `admission` | Optional deterministic declaration-level admission, described below; distinct from per-target `chance`. |
-| `key` | Stable semantic identity for one absolute placement tuple. |
-| `targetTypes` | Non-empty array restricting an absolute placement's resolved record type. |
-| `onMissingTarget` | `skip` on a `record` or `leveled` action when its existing target or store is unavailable. |
+| `requires`, `requiresAny`, `requiresNot` | Single plugin filename or array of filenames (case-insensitive). |
+| `chance` | Probability `0`–`1` (default `1`). |
+| `seed` | Finite number, floored to an integer (default `0`). |
+| `key` | Optional explicit sampling key (defaults to action `key`, then normalized action hash). |
+| `salt` | Optional salt string (default `condition`). |
 
-`attach` additionally accepts `disableOriginal` and `transferContents`. Do not write action `id`,
-action-level `type`, action-level `match`, or `__`-prefixed internal fields.
-The `type` inside a `record` or `leveled` payload names its record domain.
-MOM derives action identity from meaning, rather than filename, array position
-or labels. Moving or reordering an equivalent action does not reset saved work.
+Because admission runs at compile time, an admission becoming false on a later startup does not automatically undo already-completed static work in a save.
 
-Reference actions express targets in three ways:
+---
 
-- **Full tuples:** each row starts with its cell, followed by the action's
-  selector and payload. One action can contain several cells.
-- **Select blocks:** `modify`, `inventory` and `kill` can use `select` alongside
-  a direct payload object.
-- **Children:** an action under a parent's `actions` inherits its output
-  objects. Supported forms can omit the ordinary cell and target selector.
+## Startup Definition Actions
 
-The grammar limits fields within a row and some combinations of rows, as
-specified below. MOM does not impose an aggregate limit on valid actions,
-tuples, selection entries or outputs; large runtime work advances over several frames.
-
-## Definition changes and reference actions
-
-Authors use the same action grammar, tuples and `scripts/mom/config/` files
-throughout. Describe the intended targets, scope, conditions and effects; MOM
-automatically promotes eligible actions to LOAD and handles other supported
-actions in GLOBAL. Authors do not select an execution layer or rewrite an
-action into a separate promoted form.
-
-Native and supported imported sources first become ordinary action declarations.
-Shared code normalizes tuples, selectors, predicates, conditions and replacement
-choices, then analyzes dependencies and competing replacements before deciding
-where actions run. The same frontend runs independently in LOAD and GLOBAL.
-There is no separate content directory or context-selection field.
-
-`record` and `leveled` edit definitions in LOAD, once per OpenMW process.
-Ordinary placements, reference modifications, live inventory, death and
-guarded work execute through the runtime. An eligible unrestricted, typed
-uniform mesh replacement is automatically promoted, as described below.
-
-Record and asset lookup follows the common semantic placement decision. A
-missing record or asset, unsupported field, unavailable API or conflicting
-resolved match is handled by that backend's validation policy; it does not
-redirect an action into another context. GLOBAL reference
-queries observe the final record catalog, including later LOAD mods.
-
-### Declaration admission
-
-`admission` accepts `requires`, `requiresAny`, `requiresNot`, `chance`, `seed`,
-`key` and `salt`. Its content conditions accept a filename or array. `chance`
-is a probability from `0` to `1`, default `1`; seed is finite and rounded down
-to an integer. The shared compiler makes one deterministic admission decision
-for the declaration before either execution plan is produced. This is not a
-new runtime guard or a roll for each selected reference.
-
-Use a stable non-empty sampling `key` when the draw needs an explicit identity.
-Otherwise admission uses the action's placement `key`, then its semantic
-description. `salt` separates independent draws and defaults to `condition`.
-Changing the key, seed or salt can change the result.
-Admission is a compile-time decision; a later failed admission does not withdraw
-an already completed static edit from a save.
+MOM runs `record`, `leveled`, and eligible global model replacements once at startup (OpenMW's LOAD phase, before the main menu). Restart OpenMW after changing them; reloading Lua (`reloadlua`) or loading another save does not re-run LOAD.
 
 ### `record`
 
-`record` needs a record `type`, exact `id`, and nonempty `patch`. IDs ignore case.
-Only admitted fields may be changed; untouched fields retain their original
-values. A record action is top-level and cannot have guards, reference selection,
-filters, chance, previsit or children.
-
-This complete mixed example edits a book definition and places an existing
-tapestry through the runtime:
+Edits fields on an existing base record, or creates a new named record from an installed template. Must be top-level (no guards, `select`, `filters`, `chance`, `previsit`, or children).
 
 ```yaml
 version: 0
@@ -150,57 +124,33 @@ variants:
           - ["Balmora, Eight Plates", furn_de_tapestry_04, [1900, 960, -311], {yaw: 0}]
 ```
 
-| Type | Admitted patch fields |
+| Record `type` | Allowed `patch` fields |
 | --- | --- |
 | `Static` | `model` |
 | `Activator` | `model`, `name`, `mwscript` |
 | `Door` | `model`, `name`, `mwscript`, `openSound`, `closeSound` |
-| `Book`, `Light`, `Miscellaneous`, `Ingredient`, `Potion`, `Apparatus`, `Lockpick`, `Probe`, `Repair` | Common fields: `model`, `name`, `mwscript`, `icon`, `weight`, `value` |
-| `Book` additionally | `text`, `isScroll`, `enchant`, `enchantCapacity`, `skill` |
-| `Light` additionally | `duration`, `radius`, `color`, `isCarriable`, `isDynamic`, `isFire`, `isFlicker`, `isFlickerSlow`, `isNegative`, `isOffByDefault`, `isPulse`, `isPulseSlow` |
-| `Potion` additionally | `isAutocalc` |
-| `Apparatus` additionally | `quality` |
-| `Lockpick`, `Probe`, `Repair` additionally | `quality`, `maxCondition` |
+| `Book`, `Light`, `Miscellaneous`, `Ingredient`, `Potion`, `Apparatus`, `Lockpick`, `Probe`, `Repair` | Common: `model`, `name`, `mwscript`, `icon`, `weight`, `value` |
+| `Book` *(additional)* | `text`, `isScroll`, `enchant`, `enchantCapacity`, `skill` |
+| `Light` *(additional)* | `duration`, `radius`, `color`, `isCarriable`, `isDynamic`, `isFire`, `isFlicker`, `isFlickerSlow`, `isNegative`, `isOffByDefault`, `isPulse`, `isPulseSlow` |
+| `Potion` *(additional)* | `isAutocalc` |
+| `Apparatus` *(additional)* | `quality` |
+| `Lockpick`, `Probe`, `Repair` *(additional)* | `quality`, `maxCondition` |
 
-Availability depends on the engine's existing bindings. A missing store produces
-a capability error. NPC, Creature, Container, Armor, Clothing and Weapon
-definition edits and default inventory changes are unavailable in the checked
-API. Use the existing reference actions for supported live changes.
+*Field rules:*
+- `weight` and `quality`: non-negative finite numbers.
+- `enchantCapacity`: `0`–`214748352`, rounded to tenths.
+- `value`, `radius`, `maxCondition`: non-negative integers; `duration`: integer ≥ `-1` (`-1` = unlimited).
+- `color`: packed RGB integer (red in the low byte, then green, then blue).
+- `model` and `icon`: normalized paths; target meshes must exist in the VFS.
+- `NPC`, `Creature`, `Container`, `Armor`, `Clothing`, and `Weapon` records are not writable via OpenMW's LOAD API — use runtime actions for those types.
 
-Weight and quality are nonnegative finite values. Book enchantment capacity
-rounds to tenths and must be within `0` through `214748352`, the checked parsers'
-safe shared range. Value, radius and condition are nonnegative integers; Light
-duration is an integer of at least `-1`, where `-1` means unlimited. Light color
-is a packed RGB integer with red in the low byte, then green and blue. Flags
-are booleans. String/ID fields remain strings; model and icon paths normalize
-case and separators. Target meshes must exist in the VFS.
+**Creating a named record:** Add `create: true` and `template: existing_record_id` inside `record`. The template must already exist in installed plugins, the new `id` must be unused (and must not start with `mom__content_`), and the patch must stay installed while any save uses that record.
 
-Add `create: true` and `template: installed_record_id` inside `record` to create
-a named definition under its new `id`. The installed template must exist and
-the new ID must be unused; templates created by the same plan are rejected.
-IDs beginning `mom__content_` are reserved. A definition does not place an
-object. Runtime `place` can use its named ID after LOAD, and the defining patch
-must stay installed while a save depends on it.
-
-Conflicting equal-priority assignments to the same record field reject the
-content plan; edits to different fields compose. Draft staging verifies native
-normalization before public writes. A failed commit reports restoration and
-cleanup accurately; the existing engine APIs do not provide a multi-record
-transaction.
-
-Add action-level `onMissingTarget: skip` to a `record` or `leveled` edit when
-an unavailable existing target or content store should contribute a warning
-and no work. Omit it for the normal strict policy. This does not select another
-execution layer or recover from failed writes. Named creation still needs a
-valid installed template and unused ID.
+**Conflicts & optional edits:** Edits to different fields of the same record compose; equal-priority writes to the same field fail compilation. Set action-level `onMissingTarget: skip` to warn and skip if the target record or content store is unavailable.
 
 ### `leveled`
 
-`leveled` targets `CreatureLevelledList` or `ItemLevelledList` by exact `id`.
-Its optional `patch` accepts `chanceNone` and `calculateFromAllLevels`; item
-lists also accept `calculateForEach`. Chance is a probability from `0` to `1`,
-truncated to decimal hundredths (`0.335` becomes `0.33`). Entry-only edits
-preserve untouched flags and the original chance byte.
+Edits `CreatureLevelledList` or `ItemLevelledList` records by exact `id` (case-insensitive). Must be top-level.
 
 ```yaml
 version: 0
@@ -216,28 +166,22 @@ variants:
                 - {id: rat, level: 1}
 ```
 
-Each entry has a string `id` and integer `level` from `0` through `65535`.
-Operations compose in source and authored order:
+- Optional `patch`: `chanceNone` (`0`–`1`, truncated to hundredths, e.g. `0.335` → `0.33`), `calculateFromAllLevels` (boolean), and `calculateForEach` (boolean, `ItemLevelledList` only).
+- Each entry is `{id: string, level: 0..65535}`.
+- Note: `ItemLevelledList` write support depends on the OpenMW build (available on Luau `clockwork-alpha`; unavailable on some LuaJIT builds). Use `onMissingTarget: skip` for optional list patches.
 
 | `op` | Behavior |
 | --- | --- |
-| `append` | Append `entries`, preserving weighting duplicates. |
-| `add_if_absent` | Append ID-and-level pairs that are absent; preserve existing duplicates. |
-| `merge_by_id` | Set every occurrence of each supplied ID to its supplied level; append missing IDs once. Later supplied levels win. |
-| `remove` | Remove all matches for `match: {id: ..., level: ...}`; omit level to match all levels for that ID. |
+| `append` | Append `entries`, preserving duplicates for weighting. |
+| `add_if_absent` | Append `{id, level}` pairs not already present. |
+| `merge_by_id` | Update every existing occurrence of each `id` to its new `level`; append missing IDs once. |
+| `remove` | Remove entries matching `match: {id, level?}` (omit `level` to remove all levels for `id`). |
 | `replace` | Remove all matches and insert `entries` once at the first match position. |
-| `set` | Replace the complete entry array with `entries`. |
+| `set` | Replace the entire entry list with `entries`. |
 
-LOAD does not expose every possible member record domain. MOM validates the
-available list graph and syntax, and reports symbolic members whose existence
-or type could not be verified. Item-list support is absent on some otherwise
-supported engine builds; those builds reject explicit item-list patches.
+### Uniform Model Replacements (Automatic LOAD Promotion)
 
-### Uniform model replacements
-
-An unguarded, unrestricted `attach` with an explicit supported model-bearing
-type and one replacement model per source is eligible for automatic promotion.
-Write an ordinary attachment; MOM applies the change through base definitions:
+You do not need a separate syntax for global model replacements. Write a normal `attach` action:
 
 ```yaml
 version: 0
@@ -251,97 +195,52 @@ variants:
         disableOriginal: true
 ```
 
-The type describes which records the action targets; it is not a layer switch.
-The original records and reference identities remain in use. Eligible rows use
-unrestricted cells: `"*"`, `{}` and `{match: "*"}` have the same meaning.
-Offsets must be absent or exactly zero. Any supplied rotation is an override,
-including `{}` or zero angles. Record-ID-only `exclude` filters, in compact,
-nested or tuple-local form, subtract base records in LOAD; excluding every
-match is a valid no-op. Empty
-filters/children, `chance: 1` and `previsit: false` do not change definition
-intent. Guards, nonempty children, orientation filters, chance below one,
-`previsit: true`, restricted cell scopes and reference provenance keep an
-attachment in the runtime automatically, using the same action grammar.
-Type intersections are resolved before writability is checked. Base-record
-ID/MWScript restrictions can narrow the definition population; reference
-provenance and exact reference numbers cannot. An unrestricted choice proven
-to have one constant model can qualify too. Untyped attachments remain runtime
-actions; MOM does not guess their domains from different context catalogs.
+MOM automatically promotes an `attach` action to LOAD (editing base records directly with zero runtime cloning) when all of the following hold:
+- Unguarded, no children, `disableOriginal: true`, `chance` omitted or `1`, `previsit` omitted or `false`.
+- Unrestricted cell (`"*"`, `{}`, or `{match: "*"}`), omitted or `[0, 0, 0]` offset, and no rotation override.
+- Replacement is a single `.nif` model (or a choice provably resolving to one constant `.nif` model).
+- Any `filters` or row predicates are record-ID `exclude` rules only, and any `select` uses only `type`, `recordId`, or `mwscript` (no `ref` or `contentFile`).
+- No competing runtime rule or variable choice interferes with the same source records.
 
-Promotion is conservative across interacting replacements. If a model write
-could change a runtime selector or participate in unresolved choice competition,
-MOM keeps the affected replacement group together at runtime. This preserves
-selection and precedence rather than promoting one action in isolation. Record
-matching and content-write validation follow that shared placement decision;
-a lookup failure never supplies a fallback to another execution layer.
+For untyped or mixed-domain uniform model swaps, MOM automatically splits across disjoint domains: all **12 LOAD-writable model types** (`Static`, `Activator`, `Door`, `Light`, `Book`, `Miscellaneous`, `Ingredient`, `Potion`, `Apparatus`, `Lockpick`, `Probe`, `Repair`) promote to LOAD, while `Container` and `Creature` stay in GLOBAL.
 
-Definition edits finish before runtime reference queries. Another LOAD mod may
-override them later; MOM does not reassert its values over that mod. Restart
-OpenMW when definition declarations change. Resetting a game, loading a save or
-using `reloadlua` does not execute LOAD again. The bounded `startup` summary in
-`compileReport()` and `selfcheck()` reports the LOAD outcome separately.
+---
 
-## Cell selectors
+## Selectors & Filters
 
-A cell selector is an exact string or an object with the following keys:
+### Cell Selectors
 
-| Key | Value |
+Use an exact cell name string (or `"*"`), or a selector object:
+
+| Key | Accepted value |
 | --- | --- |
-| `exact` | One cell string or an array of exact cell strings. |
-| `match` | One name pattern or an array of patterns. |
+| `exact` | Exact cell string or array of exact strings. |
+| `match` | Pattern or array of patterns supporting leading and/or trailing `*` (prefix, suffix, or substring; not regex). |
 | `kind` | `interior` or `exterior`. |
-| `worldspace` | One worldspace ID or an array. |
-| `region` | One region ID or an array. |
-| `coords` | Exterior grid integers: `[x, y]`, `{x: x, y: y}`, or an array of such pairs. |
-| `exclude` | One nested cell selector, without another `exclude`. |
+| `worldspace` | Worldspace ID or array (defaults to `sys::default` for `coords`). |
+| `region` | Region ID or array (case-insensitive). |
+| `coords` | Exterior grid integers: `[x, y]`, `{x, y}`, or an array of pairs (cannot combine with `kind: interior`). |
+| `exclude` | Nested cell selector (cannot nest another `exclude`; needs at least one of `exact`, `match`, `coords`, `worldspace`, or `region`). |
 
-Common cell values (each line is a separate example):
+Examples (each line is one selector):
 
 ```text
 "Balmora, Eight Plates"
 "*"
 {exact: ["Balmora, Eight Plates", "Balmora, Guild of Mages"]}
 {match: "Balmora, *"}
-{kind: exterior}
-{kind: interior}
 {kind: exterior, region: "West Gash"}
-{worldspace: "sys::default"}
 {coords: [-3, -2]}
 {kind: exterior, exclude: {match: "*Balmora*"}}
 ```
 
-`exact`, `coords` and `match` add alternative ways to include a cell. The cell
-must also satisfy every supplied `kind`, `worldspace` and `region` restriction.
-Values within an array are alternatives. With none of the three include keys,
-the restrictions apply to all candidate cells. Finally, `exclude` removes cells
-matching its query. An exclusion needs at least one of `exact`, `match`,
-`coords`, `worldspace` or `region`; `kind` alone is insufficient.
+- `exact`, `coords`, and `match` union together; `kind`, `worldspace`, and `region` restrict all candidates; `exclude` subtracts matches.
+- `previsit: true` applies only to static actions resolving known exterior cells (`exact`, `coords`, `region`, or `worldspace`). `"*"` and `match` only process cells as they load.
+- **Absolute `place` destinations** require exact cells only: a string, `{exact: ...}`, or `{coords: ...}`.
 
-Matching ignores case. A `match` pattern supports a leading and/or trailing
-`*`: prefix, suffix or substring matching. It is not a general regular
-expression. Coordinates refer to grid cells, not world positions, and default
-to worldspace `sys::default` unless another is selected. `coords` cannot be
-combined with `kind: interior`.
+### Record & Keyed Selectors
 
-Exact cells and coordinates resolve to known cells. Region and worldspace
-queries resolve known exterior cells. `"*"`, name patterns and kind-only
-queries operate on cells MOM is processing; they do not preload the whole
-world. `previsit: true` is meaningful only for static actions resolving known
-exterior cells: exact exterior cells, coordinates, regions or worldspaces.
-
-Absolute `place` destinations are stricter: use an exact cell string, an
-`exact` object or a `coords` object. Wildcards, `match`, broad include keys and
-`exclude` are rejected, including when mixed with an exact destination.
-
-## Record and keyed selectors
-
-`select.recordId` accepts one exact record-ID string, a nonempty array of exact
-IDs, or the explicit match object below. It narrows an action's targets; it
-does not name a record to create. Plain strings never become patterns merely
-because they contain punctuation.
-
-Full tuples can use a keyed selector to distinguish objects with the same
-record or model:
+Full tuple rows accept record IDs, mesh paths, or position-keyed selectors matching an object's **starting position**:
 
 ```text
 record_id
@@ -350,106 +249,45 @@ meshes/foo/bar.nif
 meshes/foo/bar.nif, (x, y, z)
 ```
 
-The optional suffix must contain exactly three finite coordinates and matches
-the object's starting position. Mesh selectors are supported by `attach`,
-keyed `modify` and `kill`; inventory owners do not accept them. A `kill` mesh
-selector must resolve to actor types.
+- Mesh selectors work on `attach`, keyed `modify`, and actor-targeting `kill` (not `inventory` owners).
+- When a child action inspects a mesh-cloned parent output, `recordId` and `[exclude, ...]` match the original source record ID automatically.
 
-For child selection against a mesh-generated parent output, record selection
-and `[exclude, ...]` use its source record ID. You do not need the generated
-record ID. Other predicates still read the properties they require from the
-actual object.
+### Structured Selectors
 
-### Structured reference and record selectors
+Use an object in `select` (with optional `cell`) or in the target column of a full `modify`, `inventory`, `kill`, or `attach` row:
 
-The target column of a full `modify`, `inventory`, `kill` or `attach` row may
-contain a selector object instead of a string. Action-level `select` accepts
-the same query fields plus `cell`:
-
-| Field | Accepted value and meaning |
+| Field | Accepted value |
 | --- | --- |
-| `ref` | `[contentFilename, localReferenceNumber]` or `[contentFilename, [numbers...]]`. Select exact references from that plugin. |
-| `contentFile` | One filename or an array; restrict the reference's own engine-reported content provenance. |
-| `type` | One OpenMW reference type or an array, such as `Creature`, `NPC`, `Static` or `[Weapon, Armor]`. |
-| `recordId` | One exact ID, an array of exact IDs, or `{match: patternOrPatterns}`. |
-| `mwscript` | One base-record MWScript ID or an array of IDs. This does not select attached Lua scripts. |
+| `ref` | `[pluginFilename, localRefNum]` or `[pluginFilename, [num1, num2, ...]]` (plugin-local integers `0`–`16777215`, immune to load-order shifts). |
+| `contentFile` | Plugin filename or array matching the reference's own plugin provenance (generated outputs have none). |
+| `type` | OpenMW type name or array (e.g. `Static`, `NPC`, `[Weapon, Armor]`). |
+| `recordId` | Exact ID, array of IDs, or `{match: patternOrArray}` (leading/trailing `*` only). |
+| `mwscript` | Base-record MWScript ID or array (does not match Lua scripts). |
 
-All supplied fields must match. Values within one field are alternatives.
-Action selection, row selection and filters narrow one another; children keep
-working only on inherited outputs. Empty arrays and unknown fields are errors.
-Strings used for IDs and filenames match without regard to case.
+All supplied fields must match (AND); array items within a field are alternatives (OR).
 
 ```yaml
 - modify:
     - ["*", {ref: [Morrowind.esm, 67647]}, {scale: 0.1}]
-    - ["*", {ref: [SomeMod.esp, [1017, 1018, 1019]]}, {enabled: false}]
-```
-
-Reference numbers are nonnegative integers through `16777215` (`0xffffff`),
-local to the named plugin. Do not supply a load-order-dependent full FormID or
-a hexadecimal string. Reordering plugins does not change this identity. A
-missing or unavailable exact reference never falls back to a record broadcast.
-An action-level exact-reference selector can omit `cell`; it does not request
-a world scan or make unavailable objects immediately writable. If supplied,
-the cell restriction still matches the origin cell. Exact-reference `modify`
-supports `relocate`; position-keyed string selectors retain their restriction.
-
-```yaml
-- select:
-    ref: [Morrowind.esm, 67647]
-  modify:
-    scale: 0.1
-```
-
-`contentFile` describes the reference, not the plugin defining its base record
-or the last plugin overriding that record. It is not interchangeable with a
-variant's `requires`. Newly generated references have no content provenance.
-
-```yaml
-- modify:
     - ["*", {type: [Weapon, Armor], recordId: {match: ["*glass*", "*ebony*"]}}, {enabled: false}]
-- modify:
     - ["Vivec, Black Shalk Cornerclub", {type: NPC, mwscript: ElayneUSebaonard}, {position: [322, -4, -63]}]
 ```
 
-Record `match` uses the same leading/trailing `*` vocabulary as cell matching:
-prefix, suffix, substring or exact matching. It is not a general glob, regular
-expression or Lua pattern. Record-pattern and MWScript queries resolve the
-installed record catalog at startup; they do not automatically include records
-created later. A type-only query has no startup record-membership restriction;
-it follows ordinary target-discovery and lifecycle rules. Neither form makes
-a completed static cell a continuous watcher for every later added reference.
-New query identity follows the normalized authored query. Changed startup
-record-query membership requests another static discovery pass while retaining
-completed operations for old targets. Adding another matching installed record
-therefore does not reset completed work for its old targets.
+- An action-level `select: {ref: [...]}` may omit `cell`. Exact `ref` selectors support `relocate` (unlike position-keyed string selectors).
+- Structured `attach` selectors must include one exact `recordId` as a source hint.
+- `recordId.match` and `mwscript` queries resolve installed records at startup; adding new matching records in a later session triggers rediscovery without resetting already-completed targets.
 
-Structured attachment selectors additionally require one exact `recordId` as
-a source hint. The actual source must match that ID and every other supplied
-restriction; the hint does not bypass transfer safeguards. Existing bare mesh
-selectors remain available. Inventory selectors still require an actual NPC,
-Creature or Container owner, and `kill` still requires an actor.
+### Filters & Row Predicates
 
-The record column of absolute `place`, replacement columns of `attach`, and
-inventory item-map keys remain literal records/models under their existing
-rules. They do not accept these target-query objects.
+Use `filters` on an action (single tuple or array of tuples), or append predicate tuples to the end of a full row (not supported on `place`):
 
-## Filters and tuple predicates
-
-`filters` accepts one predicate tuple or an array of them:
-
-| Tuple | Effect |
+| Predicate tuple | Matches when |
 | --- | --- |
-| `[upright]` | Maximum tilt 25 degrees. |
-| `[upright, maxTilt]` | Set the maximum tilt in degrees. |
-| `[facing, direction]` | Face the direction within 45 degrees. |
-| `[facing, direction, tolerance]` | Set the tolerance in degrees. |
-| `[exclude, recordId1, recordId2, ...]` | Exclude at least one listed record ID. |
-
-`direction` is a number in degrees or `north`, `northeast`, `east`, `southeast`,
-`south`, `southwest`, `west` or `northwest`. North is 0 and east is 90.
-
-Append row-specific predicates after the row's ordinary fields:
+| `[upright]` | Tilted ≤ 25° from vertical. |
+| `[upright, maxTilt]` | Tilted ≤ `maxTilt` degrees. |
+| `[facing, direction]` | Facing within 45° of `direction` (degrees or compass name: `north` = `0`, `east` = `90`, `northeast`, etc.). |
+| `[facing, direction, tolerance]` | Facing within `tolerance` degrees. |
+| `[exclude, id1, id2, ...]` | Reference's record ID is not any of the listed IDs. |
 
 ```yaml
 - modify:
@@ -458,12 +296,11 @@ Append row-specific predicates after the row's ordinary fields:
     - [exclude, crate_01]
 ```
 
-Sibling filters apply to the action; trailing predicates narrow their row.
-Absolute `place` accepts neither sibling filters nor trailing predicates.
+---
 
-## Guard blocks
+## Guard Blocks
 
-A variant's `guards` array contains objects with only `when` and `actions`:
+A variant's `guards` array holds objects containing only `when` (array of condition tuples; all must match) and `actions`:
 
 ```yaml
 guards:
@@ -474,64 +311,37 @@ guards:
           - ["Balmora, Eight Plates", "furn_de_tapestry_04", [1900, 960, -311], {yaw: 0}]
 ```
 
-`when` is an array of compact tuples. All conditions must hold. Object-form
-guards and guard-block `select`, `scope`, `on_enter` and `on_exit` are invalid.
-The built-in families are `time`, `weather` and `quest_stage`.
+When a condition is temporarily unreadable, MOM holds current state rather than reverting.
 
-If a condition is unavailable, MOM holds existing work rather than interpreting
-it as false. Closing a guard reverses only actions that support reversal.
+### Numeric Operators (`time` scalars & `quest_stage`)
 
-### Numeric operators
-
-Time scalar fields and quest stages use these tuple endings. Values are
-integers; `any` and `not` need non-empty arrays.
-
-| Ending | Match |
+| Operator syntax | Meaning |
 | --- | --- |
-| `eq, value` | Equal to the value. |
-| `min, value` | Greater than or equal to the value. |
-| `max, value` | Less than or equal to the value. |
-| `any, [values...]` | Any listed value. |
-| `not, [values...]` | No listed value. |
-| `range, start, end` | Both endpoints included. |
-| `range, start, end, inclusive` | Both endpoints included. |
-| `range, start, end, exclusive` | Start included, end excluded. |
+| `eq, N` | `== N` |
+| `min, N` | `>= N` |
+| `max, N` | `<= N` |
+| `any, [N1, N2, ...]` | Matches any listed integer. |
+| `not, [N1, N2, ...]` | Matches none of the listed integers. |
+| `range, start, end` / `range, start, end, inclusive` | Both endpoints included. |
+| `range, start, end, exclusive` | `start` included, `end` excluded. |
 
-### Time
+### `time`
 
-Scalar fields are `hour`, `month`, `day`, `dayOfWeek` and `yearDay`:
+Scalar fields: `hour`, `month`, `day`, `dayOfWeek`, `yearDay` (ranges wrap when `start > end`, e.g. `18` to `6`). Also supports `season` (`eq`/`any`), `date` (`eq`/`any`/`range`), and `flags.isWeekend` (boolean directly; days 1 and 7):
 
 ```yaml
-- [time, hour, eq, 12]
 - [time, hour, range, 18, 6, inclusive]
 - [time, dayOfWeek, any, [1, 7]]
-- [time, yearDay, not, [1, 2, 3]]
-```
-
-Time ranges wrap when the start is greater than the end, such as 18 through 6.
-There are also season, date and weekend forms:
-
-```yaml
-- [time, season, eq, summer]
 - [time, season, any, [spring, summer]]
-- [time, date, eq, {month: 4, day: 12}]
-- [time, date, any, [{month: 4, day: 12}, {month: 4, day: 13}]]
 - [time, date, range, {month: 4, day: 1}, {month: 4, day: 30}, inclusive]
 - [time, flags.isWeekend, true]
 ```
 
-Season supports only `eq` and `any`. Date supports `eq`, `any` and `range`.
-A date point may contain integer `month` (1–12), `day` (1–31) and `year`; at
-least one is required. Date range endpoints require both month and day. A range
-without years repeats annually, including windows crossing the year boundary.
-A year on only one endpoint bounds that annual window from or through the dated
-endpoint. With years on both, the endpoints describe dated bounds. The optional
-range flag controls the end, as in numeric ranges. Weekend means day 1 or 7;
-its tuple takes a boolean directly, with no operator.
+`date` objects accept integer `month` (`1`–`12`), `day` (`1`–`31`), and optional `year` (omitting `year` repeats annually, including across New Year).
 
-### Weather
+### `weather`
 
-Weather matches a region's weather script ID:
+Matches a region's weather script ID using `eq`, `any`, or `not`:
 
 ```yaml
 - [weather, "Bitter Coast Region", eq, 1]
@@ -539,52 +349,32 @@ Weather matches a region's weather script ID:
 - [weather, "Molag Amur Region", not, [4]]
 ```
 
-Only `eq`, `any` and `not` are supported. IDs identify weather types and have no
-numeric ordering.
+### `quest_stage`
 
-### Quest stage
+Supports all numeric operators:
 
 ```yaml
-- [quest_stage, "A1_1_FindSpymaster", eq, 10]
-- [quest_stage, "A1_1_FindSpymaster", min, 50]
+- [quest_stage, "A1_1_FindSpymaster", min, 10]
 - [quest_stage, "A1_1_FindSpymaster", range, 10, 50, inclusive]
 ```
 
-Quest stages support every numeric operator above.
+---
 
-## `place`
+## Reference Actions
 
-Create objects at absolute destinations:
+### `place`
+
+Spawns records at exact destinations: `[cell, recordOrChoice, [x, y, z], rotation]`.
 
 ```yaml
 - place:
     - ["Balmora, Eight Plates", "furn_de_tapestry_04", [1900, 960, -311], {yaw: 0}]
 ```
 
-Each full row is `[cell, recordId, [x, y, z], rotation]`. The record must exist;
-a mesh path cannot be placed directly. Rotation is a required object with
-`yaw`, `pitch` and/or `roll` in degrees; omitted angles default to zero, so `{}`
-is valid. The destination must satisfy the exact-cell rules above.
-
-`place` does not accept `select.recordId`, sibling filters or trailing
-predicates. It can own child actions. As a child it still takes full absolute
-rows: each inherited parent output causes one placement at every destination.
-Two inherited outputs can therefore create two objects at the same position.
-
-For a deterministic choice between records, replace the second column with
-`{choose: [[recordA, weightA], [recordB, weightB]], seed: 7, key: sample_key}`.
-Each weight must be positive and finite. Targets are record IDs, optionally
-written `{recordId: recordA}`; meshes cannot be placed this way. `seed`, `key`
-and `salt` are optional. The choice key defaults to the action's `key`, then
-its semantic description; salt defaults to `alternative`. One record is chosen
-by the common compiler, rather than once for every runtime target.
-
-An action `key` is a non-empty semantic placement identifier, distinct from a
-diagnostic label. It requires exactly one absolute placement row and must be
-unique among active keyed declarations. Keep it stable when moving the file
-or reordering entries. Distinct keys can deliberately create separate objects
-at the same transform. `targetTypes: [Static, Activator]`, for example, rejects
-a chosen target of another resolved type; it does not change the record.
+- `rotation` is required (`yaw`, `pitch`, `roll` in degrees; `{}` = all zero). Meshes cannot be placed directly.
+- Does not accept `select.recordId`, `filters`, or row predicates. Can own child `actions`.
+- **Weighted record choice:** Replace the second column with `{choose: [[recordA, weightA], [recordB, weightB]], seed?, key?, salt?}` (positive finite weights; record IDs or `{recordId: ...}`; default salt `alternative`). Chosen once at compile time.
+- **Keyed placements:** Add `key: "unique_id"` on a single-row `place` action to give it a permanent identity independent of filename/order (unique across active keyed placements). Distinct keys can place separate objects at identical coordinates, and editing a keyed placement's transform, record, cell, or scale updates the spawned object in place. Add `targetTypes: [Static, Activator]` to enforce allowed record types.
 
 ```yaml
 - key: my_patch:tapestry
@@ -594,9 +384,9 @@ a chosen target of another resolved type; it does not change the record.
     - ["Balmora, Eight Plates", {choose: [[furn_de_tapestry_03, 2], [furn_de_tapestry_04, 1]], seed: 7}, [1900, 960, -311], {yaw: 0}]
 ```
 
-## `attach`
+### `attach`
 
-Create an output relative to each matching source object:
+Spawns or replaces objects relative to matching sources: `[cell, sourceSelector, replacement, offset?, rotation?, predicates...]`.
 
 ```yaml
 - attach:
@@ -604,51 +394,17 @@ Create an output relative to each matching source object:
   disableOriginal: true
 ```
 
-Full rows have `[cell, sourceSelector, replacement, offset?, rotation?,
-predicates...]`. The source selector and replacement can name a record or mesh.
-The offset defaults to zero. Rotation is optional, but if supplied must follow
-an offset; use `[0, 0, 0]` for no offset. A supplied rotation is an angle object
-as for `place`.
+- `offset` defaults to `[0, 0, 0]`; `rotation` (if given) must follow an offset.
+- **Supported source types at runtime:**
+  - `Static` and scriptless `Activator`: `disableOriginal` optional.
+  - Non-restocking `Container`: requires `disableOriginal: true` and one `Container` output; transfers live inventory, player deposits, lock state, and respawn behavior cleanly. *(Known Luau limitation: Luau's `Lockable` key/trap setters reject supplied values, so container transfers needing key/trap writes can fail on Luau.)*
+  - Living, non-summoned `Creature`: one-for-one mesh replacement only with `disableOriginal: true`. Spawns a fresh actor from a copy of the base record (preserving stats, base inventory, services, AI, MWScript, transform, scale, and owner, but not live health/inventory/active effects/script locals).
+  - `NPC`, `Door`, `Light`, and other item-bearing sources are not cloned at runtime.
+- **Ownership:** Replacements by model path or with `disableOriginal: true` preserve the source reference's owner; non-disabling attachments stay unowned.
 
-`disableOriginal: true` disables the selected source after replacement. It is
-optional for supported Static and Activator attachments. Containers require it
-and must transfer into one Container output. MOM preserves their inventory and
-lock state, including native respawning containers. `transferContents` is an
-optional boolean policy: omission or `true` preserves the required transfer;
-`false` rejects a selected Container source. It is harmless for supported
-sources without transferable inventory, including promoted model edits. MOM
-checks this policy against the selected source capabilities after placement.
-Lock-state transfer has a known native limitation on Luau OpenMW builds, where
-the `Lockable` key and trap setters reject supplied value arguments; transfers
-needing key or trap writes can fail on that runtime. Scripted or restocking
-sources that cannot be transferred safely are rejected. Creature sources support
-one-for-one mesh replacement only: the target must be a mesh path and
-`disableOriginal: true` is required. Multiple output rows that could select the
-same Creature are rejected; distinct keyed starting positions can identify
-different sources. Dead and summoned sources are skipped.
+#### Replacement Choices
 
-A Creature mesh replacement creates a fresh actor from a copy of the source
-base record, retaining its base stats, inventory definitions, services, AI and
-MWScript. It preserves the selected reference's transform, scale and owner,
-but does not transfer its current inventory, health, active effects, running AI,
-script locals or engine identity. Scripted Creature templates are allowed.
-Use a save from before interaction with an affected actor when testing a visual
-replacer. Withdrawing a guarded replacement removes its output and restores
-the original; changes made to the replacement during play are not transferred
-back. The original reference's native spawning/summon ownership is not
-transferred to the new actor.
-
-NPCs, doors, lights and other unsupported item-bearing sources are not cloned.
-
-Full rows provide their own source selectors. Legacy string-source rows do not
-accept `select.recordId`; structured exact-source rows and replacement-choice
-rows can intersect their source with that constraint. Rows may use sibling
-filters or trailing predicates. An attachment can own children.
-
-### Replacement choices
-
-The third column can contain a replacement expression in place of a string.
-This complete vanilla example chooses between two tapestry models:
+Replace the third column with a weighted choice object (unguarded static `attach`, `disableOriginal: true`, zero/omitted offset, no rotation, record-ID `exclude` predicates only):
 
 ```yaml
 version: 0
@@ -662,70 +418,34 @@ variants:
         disableOriginal: true
 ```
 
-`choose` is a non-empty array of `[target, weight]` tuples. Simple weights are
-nonnegative finite numbers, with at least one positive weight including any
-`keepWeight`. String targets use the ordinary record/mesh distinction. Write
-`{recordId: literal_id}` or `{model: f/replacement.nif}` when the kind must be
-explicit, including a record whose ID resembles a mesh path.
-
-| Expression field | Meaning |
+| Field | Meaning |
 | --- | --- |
-| `choose` | Ordered alternatives; unavailable alternatives retain their slots. |
-| `keepWeight` | Weight of keeping the source, default `0`, when no `profile` is supplied. |
-| `keep` | `stop` (default) ends choice routing after KEEP; `continue` permits another matching rule. It does not name a target record. |
-| `profile` | Optional inline spatial profile, described below. |
-| `order` | Optional non-empty semantic ordering string for overlapping choice rows; otherwise authored row order is used. |
+| `choose` | Non-empty array of `[target, weight]` tuples (`target` = string or `{recordId: ...}` / `{model: ...}`; missing alternatives keep their weighted slot without shifting probabilities). |
+| `keepWeight` | Weight for keeping the original (default `0`; ignored when `profile` is provided). |
+| `keep` | `stop` (default) ends choice routing on KEEP; `continue` lets lower-priority rules run. |
+| `priority` | Optional 32-bit integer for ordering competing choice rules within the same action priority tier (higher runs first). |
+| `order` | Optional tie-breaker string (defaults to authored order). |
+| `profile` | Optional spatial weighting profile (see below). |
 
-Choices use deterministic position/clustering and seed data, so nearby sources
-can share a variant. They are not independent admission rolls. Record-specific
-choice rules precede mesh rules; within the same source kind, `order` determines
-the sequence. KEEP controls whether that sequence continues. A missing chosen
-alternative stops that opportunity without shifting its weight to another
-slot. The winner is checked at capture and retained during partial work/recovery.
+**Spatial profiles (`profile`):** For `N` targets, every weight vector has **`N + 1` entries** (`[keepWeight, target1, ..., targetN]`; omitted `profile.default` defaults to KEEP-only; negative weights count as `0`).
 
-Choice attachments require unguarded static actions, `disableOriginal: true`
-and explicit root source rows. Offsets must be omitted or zero, rotations must
-be omitted, and tuple-local predicates must be record exclusions. These choices do not add actor transfer,
-reference-position sources or inherited-child choice support. Existing simple
-string attachments retain their broader transform/child grammar.
-
-An unrestricted constant model choice can be promoted automatically when its
-type and competing rules permit. Variable or spatial outcomes stay in the
-runtime. Native and imported choices use the same normalization and planning.
-
-### Spatial choice profiles
-
-With `N` targets, each profile weight vector contains `N + 1` entries: KEEP
-first, then target 1 through N. A supplied `profile` owns those vectors; the
-weights beside `choose` targets and `keepWeight` do not provide its default.
-If `profile.default` is omitted, its default is KEEP-only. For example, a
-two-target choice with `profile: {seed: 7, default: [0, 1, 3]}` retains the
-simple 1-to-3 target weights while supplying an explicit seed.
-
-| Profile field | Accepted shape |
+| `profile` field | Shape |
 | --- | --- |
-| `seed` | Finite number, rounded down; default `0`. |
-| `cluster` | Object with `scale`, `detail`, `detailWeight`, `jitter`; scale/detail are positive. |
-| `default`, `interiorDefault` | Weight vectors including KEEP. |
-| `regions` | Region-ID-to-weight-vector map. |
-| `cells` | Array of `{x, y, weights}` for integer exterior grid coordinates. |
-| `points` | Array of `{x, y, radius, weights}` with positive radius in world coordinates. |
-| `interiors` | Cell-name map to `{weights: [...]}` or `{x: ..., y: ..., region: ...}` virtual facts. |
-| `gradients` | Array of `{axis, anchors: [{at, weights}, ...]}`; axis is `x`, `y`, `wetness`, `warmth`, `snow` or `ash`. |
-| `climateOverrides` | Region-ID map to optional `wetness`, `warmth`, `snow`, `ash` values. |
+| `seed` | Finite number, floored (default `0`). |
+| `cluster` | `{scale, detail, detailWeight, jitter}` (`scale` and `detail` > 0). |
+| `default`, `interiorDefault` | Weight vectors (`N + 1` numbers). |
+| `regions` | Map of region ID → weight vector. |
+| `cells` | Array of `{x, y, weights}` (integer grid coords). |
+| `points` | Array of `{x, y, radius, weights}` (world coords, `radius > 0`). |
+| `interiors` | Map of cell name → `{weights: [...]}` or virtual location `{x?, y?, region?}`. |
+| `gradients` | Array of `{axis, anchors: [{at, weights}, ...], offsetAxis?, offsets?: [{at, value}, ...]}` (`axis` = `x`, `y`, `wetness`, `warmth`, `snow`, or `ash`). |
+| `climateOverrides` | Map of region ID → `{wetness?, warmth?, snow?, ash?}`. |
 
-Gradients can add `offsetAxis: x` or `y` with
-`offsets: [{at: ..., value: ...}, ...]`. Coordinates and weights must be finite;
-duplicate normalized names and duplicate gradient anchors are rejected.
-Negative profile weights count as zero when selecting. Exterior point overrides
-take precedence over grid cells, then region weights, available gradients and
-the default. Interior explicit weights take precedence; an unmatched interior
-can use `interiorDefault`. Matching interiors can instead supply virtual
-coordinate/region facts for the remaining profile rules.
+Exterior override priority: `points` > `cells` > `regions` > `gradients` > `default`. Interior priority: explicit `interiors[cell].weights` > virtual location rules > `interiorDefault` > `default`.
 
-### Inherited child attachment
+#### Child Attachments
 
-A child can omit the cell and source selector:
+Under a parent's `actions`, `attach` can omit cell and source: `[replacement, offset?, rotation?, predicates...]`. Do not mix full and abbreviated rows in one `attach` action.
 
 ```yaml
 - attach:
@@ -733,234 +453,62 @@ A child can omit the cell and source selector:
     - ['f\Furn_De_Tapestry_02.NIF', [0, 0, 64]]
 ```
 
-Each abbreviated row is `[replacement, offset?, rotation?, predicates...]`.
-Even `[replacement]` is valid. These rows share one attachment operation, and
-each row's predicates narrow that row. The inherited source must meet the same
-type, script and transfer rules as an ordinary attachment. Multiple abbreviated
-rows are rejected for a Container source, including when filters seem mutually
-exclusive. A custom output-producing family must supply enough output-type
-information for MOM to check the attachment.
+### `modify`
 
-Use `select`, sibling filters or trailing predicates to narrow inherited
-outputs. A child may instead use full rows to narrow by cell and source. That
-cell matches the output's origin cell; a moved output may currently be elsewhere.
-A mesh source selector matches its current physical model. Do not mix full and
-abbreviated rows in one `attach` action.
+Modifies existing references. Cannot own child actions.
 
-## `modify`
+**Forms:**
+- Full row: `["Balmora, Eight Plates", "urn_01", {enabled: false}]`
+- Position-keyed row: `["Balmora, Eight Plates", "misc_com_bottle_05, (-294.999, 484.871, -101.713)", {scale: {to: 0.9}}]`
+- Select + direct block: `select: {cell: ..., recordId: ...}` + `modify: {enabled: false, scale: {to: 0.9}}`
+- Compact child row: `modify: [[{scale: {to: 0.9}}, [upright, 25]]]`
 
-Change `enabled`, `owner`, `position`, `rotation`, `scale` or `relocate`.
+*(Note: legacy string selectors allow at most one broadcast row per action and cannot mix broadcast + position-keyed rows; structured-selector rows have no such restriction.)*
 
-A broadcast row patches every selected copy:
-
-```yaml
-- modify:
-    - ["Balmora, Eight Plates", "urn_01", {enabled: false}]
-```
-
-A keyed row narrows by starting position:
-
-```yaml
-- modify:
-    - ["Balmora, Eight Plates", "misc_com_bottle_05, (-294.999, 484.871, -101.713)", {scale: {to: 0.9}}]
-```
-
-A direct block uses action-level selection, or inherited parent outputs:
-
-```yaml
-- select:
-    cell: "Balmora, Eight Plates"
-    recordId: urn_01
-  modify:
-    enabled: false
-    scale: {to: 0.9}
-```
-
-Legacy string selectors allow only one broadcast tuple per action; do not mix
-those broadcast and position-keyed rows. Structured-selector rows may carry
-their own independent payloads. A position-keyed patch cannot use `relocate`;
-an exact `ref` query can. A standalone direct block needs selection. A child direct block can
-inherit its targets. Compact child rows can add predicates to that inherited
-payload:
-
-```yaml
-- modify:
-    - [{scale: {to: 0.9}}, [upright, 25]]
-```
-
-`modify` cannot own children.
-
-| Patch field | Accepted form |
+| Patch field | Accepted syntax |
 | --- | --- |
 | `enabled` | Boolean. |
-| `position` | Absolute `[x, y, z]`, `{to: [x, y, z]}`, or relative `{by: [x, y, z]}`. |
-| `rotation` | Absolute `{yaw: n, pitch: n, roll: n}`, `{to: {...}}`, or relative `{by: {...}}`; at least one angle. |
-| `scale` | Absolute number, `{to: n}`, or multiplier `{by: n}`. |
-| `owner` | Object with `clear`, `recordId`, `factionId`, `factionRank`. |
-| `relocate` | Object with destination `cell`, absolute `position` and optional absolute `rotation`. |
+| `position` | `[x, y, z]`, `{to: [x, y, z]}`, or relative `{by: [x, y, z]}` (from starting position). |
+| `rotation` | `{yaw?, pitch?, roll?}`, `{to: {...}}`, or relative `{by: {...}}` (at least one angle; from starting rotation). |
+| `scale` | Positive number, `{to: n}`, or multiplier `{by: n}`. |
+| `owner` | `{clear: true}` or `{recordId?, factionId?, factionRank?}` (`factionRank` requires `factionId`; cannot combine with `clear: true`). |
+| `relocate` | `{cell: exactCell, position: [x, y, z], rotation?: {...}}` (cannot combine with sibling `position`/`rotation`, or with position-keyed string selectors; works with `ref` selectors). |
 
-Patch objects reject unknown fields. `by` and `to` cannot be combined, nor can
-direct rotation angles be combined with them. Owner `clear` is boolean;
-`recordId` must identify an NPC, `factionId` a faction, and `factionRank` a
-non-negative integer accompanied by `factionId`. `clear: true` cannot be
-combined with other ownership fields.
+### `inventory`
 
-`relocate.cell` must resolve exactly one destination. Do not combine `relocate`
-with sibling position or rotation; put the destination transform inside it.
+Modifies inventories on `NPC`, `Creature`, or `Container` owners (record IDs, starting-position keys, or structured selectors; no mesh selectors; cannot own children).
 
-Relative position and rotation use the object's OpenMW starting transform.
-Reversing a managed transform restores that starting value, even if something
-else moved the object before MOM applied the action. Position and rotation are
-independent. Doors have an engine limitation: moving a door can change its
-reported starting transform. MOM captures it early for known finite selections
-or before its first edit, but cannot recover an earlier transform already lost
-to another mod's move.
+**Forms:**
+- Shared items across multiple owners: `inventory: {owners: [[cell, selector], ...], items: {item_id: opTuple}}`
+- Select + direct map: `select: {...}` + `inventory: {gold_001: [add, 100]}`
+- Full row: `inventory: [["Balmora, Guild of Mages", "ajira", {gold_001: [add, 100]}]]`
+- Compact child row: `inventory: [[{gold_001: [add, 100]}, [exclude, urn_01]]]`
 
-## `inventory`
-
-Inventory actions target NPCs, creatures or containers and map item record IDs
-to operation tuples. Four forms are supported.
-
-Owners with shared items:
-
-```yaml
-- inventory:
-    owners:
-      - ["Balmora, Guild of Mages", "ajira"]
-      - ["Balmora, Guild of Mages", "galbedir"]
-    items:
-      gold_001: [add, 100]
-      iron_dagger: [equip]
-```
-
-Direct block:
-
-```yaml
-- select:
-    cell: "Balmora, Guild of Mages"
-    recordId: ajira
-  inventory:
-    gold_001: [add, 100]
-    iron_dagger: [equip]
-```
-
-Full tuples:
-
-```yaml
-- inventory:
-    - ["Balmora, Guild of Mages", "ajira", {gold_001: [add, 100]}]
-```
-
-A child may use a direct block without `select`, or compact inherited rows:
-
-```yaml
-- inventory:
-    - [{gold_001: [add, 100]}, [exclude, urn_01]]
-```
-
-Even one owner uses an array containing `[cell, selector]` under `owners`.
-Inventory owner selectors accept record IDs, keyed starting positions and
-structured reference/record queries, not mesh paths. `inventory` cannot own children.
-
-| Item operation | Meaning |
+| Item operation | Effect |
 | --- | --- |
-| `[replace, target_record_id]` | Replace the selected item type. |
-| `[replace, target_record_id, equip]` | Replace it and equip the result. |
-| `[remove]` | Remove the selected item type. |
-| `[remove, limit]` | Limit how many are removed. |
-| `[add, count]` | Add the given count. |
-| `[add, count, equip]` | Add and equip. |
-| `[ensure, minimum]` | Add only the deficit needed to possess at least this many copies. |
-| `[ensure, minimum, equip]` | Ensure possession and request ordinary automatic equipment. |
-| `[equip]` | Equip the item. |
-| `[unequip]` | Unequip the item. |
+| `[add, count]` / `[add, count, equip]` | Add `count` copies (optionally equip). |
+| `[ensure, min]` / `[ensure, min, equip]` | Add only enough copies to reach at least `min` total (counts existing/equipped copies; never trims excess). |
+| `[remove]` / `[remove, limit]` | Remove all (or up to `limit`) matching copies. |
+| `[replace, new_id]` / `[replace, new_id, equip]` | Replace matching items with `new_id` (optionally equip). |
+| `[equip]` / `[unequip]` | Equip or unequip the item. |
 
-Use positive integer counts and limits. Item keys and replacement targets must
-be valid record IDs. IDs that do not resolve to inventory items are diagnosed
-and omitted. If no owner or item resolves, MOM diagnoses and omits the action.
-Equipment operations accept only Armor, Clothing, Light or Weapon records;
-equipping consumables or tools is a compile error. Restocking inventories are
-subject to MOM's runtime safeguards; inventory reversal is best effort if play
-or another mod has changed the items since the action ran.
+`equip` / `unequip` only allow `Armor`, `Clothing`, `Light`, and `Weapon` records. Do not target the same record with both `ensure` and another item's `replace` target in one map. Reversal is best-effort if play modified the inventory.
 
-`ensure` requires an actual positive integer minimum. Existing copies across
-stacks and item-data variants count, including equipped copies. Only missing
-copies are created, using default item data. Ensure does not repair existing
-equipment, trim excess copies or continuously replenish consumed items after
-the operation completes. Its optional `equip` requests the usual equipment
-behavior; a minimum of two does not request two equipped slots.
+### `kill`
 
-On reversal, MOM attempts to withdraw its own ensured additions while retaining
-the captured ordinary baseline and outside additions. It never recreates a
-consumed baseline to restore an exact old total. If an interrupted write cannot
-be attributed safely, recovery holds instead of guessing. Restocking stock is
-not converted into owned additions. Do not combine an ensured record with
-another item's replacement target in the same map: that mixes minimum and
-exact-total policies for one record. Record-map keys must also be unique after
-case normalization.
-
-## `kill`
-
-Kill selected NPCs or creatures:
+Permanently kills matching `NPC` or `Creature` targets (cannot own children; never reverses when a guard closes).
 
 ```yaml
 - kill:
     - ["Balmora, Eight Plates", "mudcrab"]
 ```
 
-The full row is `[cell, selector, options?, predicates...]`. Record IDs,
-keyed starting positions and actor-resolving mesh selectors are supported.
-`options` can only be an empty object; it has no public keys.
+Or with `select` / child inheritance: `kill: {}` (or compact child row `kill: [[{}, [exclude, rat]]]`). Full row syntax is `[cell, selector, {}?, predicates...]`.
 
-A direct block uses `kill: {}`:
+---
 
-```yaml
-- select:
-    cell: "Balmora, Eight Plates"
-    recordId: mudcrab
-  kill: {}
-```
+## Persistence & Error Handling
 
-A child may inherit parent outputs with `kill: {}` or narrow them by selection.
-It can also use compact rows with an empty payload and trailing predicates:
-
-```yaml
-- kill:
-    - [{}, [exclude, rat]]
-```
-
-A standalone direct block needs action-level selection. `kill` cannot own
-children, and killing is irreversible even when the guard later closes.
-
-## Saved changes and failure behavior
-
-MOM is unpublished; saves from earlier development implementations may be reset.
-The following persistence rules apply to the current design.
-
-Unguarded reference actions are static work. Their completed effects persist in the save,
-and equivalent completed work is not repeated. Removing a configuration does
-not undo it. Disjoint additions can run; overlapping changes need a supported,
-unambiguous replacement of a previous edit or MOM-owned output. Old kill,
-inventory, removed or otherwise unsupported work retains its claims and can
-block overlapping changes. There is no generic reset command.
-
-Guarded actions can apply, reverse and reapply as conditions change, subject to
-the action's reversal support and recoverable object state. Final guarded
-changes wait for static work to settle, including static work on other targets.
-Children apply after their parents and are removed before their parents.
-
-MOM compiles the installed runtime sources together. A fatal error rejects the
-whole set; MOM does not install a partial result or reuse earlier individual
-sources. `I.MOM.compileReport()` reports the result and bounded diagnostics.
-Definition validation/commit is a separate LOAD result: failed or incomplete
-LOAD work blocks runtime activation; a later runtime or save-activation failure
-leaves successful definition edits in place. See the bounded `startup` summary.
-
-Removing a definition patch and restarting stops overriding its installed
-definition. It does not reroll already realized inventories or encounters.
-Keep a named-definition patch installed while saves use its records. Loading
-another game or using `reloadlua` recompiles runtime work without rerunning LOAD.
-
-MOM's saved state currently uses schema `0`. Unsupported or malformed state is
-preserved for diagnosis and blocks changes; it is not automatically converted.
-The YAML `version: 0` is the configuration format, not a save-migration switch.
+- **Save schema:** MOM stores runtime state in a compact `schemaVersion = 1` ledger. Pre-release `schemaVersion = 0` payloads reset cleanly on load.
+- **Static vs. guarded:** Unguarded reference actions run once per target/cell and persist in the save. Guarded actions apply, reverse (deepest child first), and reapply as guard truth changes, waiting for static cell work to settle first.
+- **Atomic compilation:** All native configs compile together; a fatal syntax or validation error rejects the runtime set so partial patches never corrupt a save. LOAD definition failures block runtime activation; a runtime failure after a valid LOAD run leaves committed startup definitions intact. Inspect both via `I.MOM.compileReport()`.

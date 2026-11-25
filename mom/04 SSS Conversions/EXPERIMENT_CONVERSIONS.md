@@ -249,7 +249,7 @@ The comparisons above follow the current implementation:
 - [MOM modify runtime](<../00 OpenMW/scripts/mom/actions/modify_ref/runtime.lua>)
   computes managed relative position/rotation and their reversal from the
   starting transform. Reversal is not a universal snapshot rollback. The
-  door-origin caveat in the [public guide](<../docs/MOD_AUTHOR_GUIDE.md#changes-and-existing-saves>)
+  door-origin caveat in the [public guide](<../docs/MOD_AUTHOR_GUIDE.md#4-working-with-existing-saves>)
   still applies if another mod moved a door before MOM could observe it.
 - [MOM semantic action identity](<../00 OpenMW/scripts/mom/contracts/plan_identity.lua>)
   includes the program, selection, guard, chance, and lifecycle rather than

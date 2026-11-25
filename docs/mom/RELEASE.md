@@ -1,80 +1,62 @@
-# Preparing a release
+# Release Procedure
 
-Run this procedure from the intended release commit. Retain the generated
-receipts and record both supported engine identities. A previous revision's
-successful run is useful history, but it does not validate the candidate.
+Run every step from a clean checkout of the intended release commit and retain receipts outside the repository.
 
-## 1. Check sources and package selection
+---
+
+## 1. Local Static & Packaging Checks
 
 ```sh
 git status --short
 git diff --check
-python3 -m unittest discover -s "mom/99 mom_test_orchestrator/host/tests"
 "mom/99 mom_test_orchestrator/run_pure_tests.sh"
+"mom/99 mom_test_orchestrator/run_pure_tests.sh" --stress-only
+python3 -m unittest discover -s "mom/99 mom_test_orchestrator/host/tests"
 python3 tools/release.py
 ```
 
-Use a clean tree for final evidence. Check that documentation examples compile,
-links resolve, and the archive contains the public docs and intended runtime
-files. [`tools/release_manifest.txt`](../../tools/release_manifest.txt) selects
-release inputs. The builder removes the repository's leading `mom/` prefix,
-uses deterministic ZIP metadata, and audits exact membership and source bytes.
+[`tools/release_manifest.txt`](../../tools/release_manifest.txt) controls archive membership. `release.py` strips the leading `mom/` prefix, writes deterministic ZIP metadata, and rejects symlinks, hidden metadata, logs, saves, or bytecode.
 
-## 2. Validate both engines
+---
 
-Use patched LuaJIT and Luau OpenMW executables with the matching resources,
-vanilla master files, and a new work directory:
+## 2. Dual-Engine Correctness & Examples
+
+Run against patched **LuaJIT** and **Luau (`clockwork-alpha`)** OpenMW builds using vanilla masters (`Morrowind.esm`, `Tribunal.esm`, `Bloodmoon.esm`):
 
 ```sh
+LUAJIT_OPENMW=/absolute/path/to/luajit-build/openmw
+LUAU_OPENMW=/absolute/path/to/luau-build/openmw
+
+# Complete dual-engine matrix (pure normal/stress, all world scenarios, all restart campaigns)
 python3 "mom/99 mom_test_orchestrator/host/mom_harness.py" check \
-  --luajit-openmw /absolute/path/to/luajit-build/openmw \
-  --luau-openmw /absolute/path/to/luau-build/openmw \
-  --workdir /tmp/mom-release-correctness-UNIQUE
+  --luajit-openmw "$LUAJIT_OPENMW" \
+  --luau-openmw "$LUAU_OPENMW" \
+  --workdir /tmp/mom-release-check-UNIQUE
+
+# Compile all shipped configs and complete doc YAML blocks in LOAD + GLOBAL
+python3 "mom/99 mom_test_orchestrator/host/mom_harness.py" examples --openmw "$LUAJIT_OPENMW"
+python3 "mom/99 mom_test_orchestrator/host/mom_harness.py" examples --openmw "$LUAU_OPENMW"
 ```
 
-Require the combined result to pass. This includes normal and stress contracts,
-world scenarios, and real-save restart campaigns on both runtimes. Keep the
-individual engine logs, phase receipts, save handoffs, and combined result.
-Check the recorded coverage and native runtime markers; investigate missing or
-cancelled work rather than counting a partial run as a pass.
-
-Compile the public examples with each selected engine:
-
-```sh
-python3 "mom/99 mom_test_orchestrator/host/mom_harness.py" examples \
-  --openmw /absolute/path/to/luajit-build/openmw
-python3 "mom/99 mom_test_orchestrator/host/mom_harness.py" examples \
-  --openmw /absolute/path/to/luau-build/openmw
-```
-
-The check uses vanilla masters and preserves the YAML bytes. Content-gated
-variants can be inactive; test optional compatibility patches separately with
-their required mods. This check establishes compilation, while the world
-scenarios and manual route establish physical behavior.
-
-Every native example is compiled in both contexts through read-only adapters;
-the check never executes the content plan or writes a lifecycle status. For
-changes to content compilation or startup, also run these focused native gates
-on each engine using new work directories:
+When startup compilation or the LOAD backend changed, also run the content backend and production lifecycle gates on both engines:
 
 ```sh
 python3 "mom/99 mom_test_orchestrator/host/content_backend_gate.py" \
-  --openmw /absolute/path/to/openmw --workdir /tmp/mom-content-backend-UNIQUE
+  --openmw "$LUAJIT_OPENMW" --workdir /tmp/mom-backend-luajit-UNIQUE
+python3 "mom/99 mom_test_orchestrator/host/content_backend_gate.py" \
+  --openmw "$LUAU_OPENMW" --workdir /tmp/mom-backend-luau-UNIQUE
+
 python3 "mom/99 mom_test_orchestrator/host/content_lifecycle.py" \
-  --openmw /absolute/path/to/openmw --workdir /tmp/mom-content-lifecycle-UNIQUE
+  --openmw "$LUAJIT_OPENMW" --workdir /tmp/mom-lifecycle-luajit-UNIQUE
+python3 "mom/99 mom_test_orchestrator/host/content_lifecycle.py" \
+  --openmw "$LUAU_OPENMW" --workdir /tmp/mom-lifecycle-luau-UNIQUE
 ```
 
-The backend gate covers native fields, copy/staging/rollback and list semantics.
-The lifecycle gate enables actual production entry points and checks mixed
-sources, reset, Lua reload, two saved games, later overrides, failed inputs,
-and independent GLOBAL/LOAD configuration changes. The ordinary correctness
-matrix includes a mixed-file scenario and a fresh-save persistence campaign.
+---
 
-## 3. Record performance
+## 3. Performance Verification
 
-Check the workload projection, then collect all three modes with the `release`
-profile on a controlled host. Choose an actual available CPU set and an
-explicit patched engine for embedded/integration runs:
+Verify the workload catalog, then collect `release` profiles pinned to an idle CPU set:
 
 ```sh
 python3 "mom/99 mom_test_orchestrator/host/mom_harness.py" catalog --check
@@ -84,50 +66,37 @@ python3 "mom/99 mom_test_orchestrator/host/mom_harness.py" run \
   --output /tmp/mom-release-standalone.json
 
 python3 "mom/99 mom_test_orchestrator/host/mom_harness.py" run \
-  --mode embedded --profile release --openmw /absolute/path/to/openmw \
-  --cpu-set CPU_LIST --output /tmp/mom-release-embedded.json
+  --mode embedded --profile release --openmw "$LUAU_OPENMW" --cpu-set CPU_LIST \
+  --output /tmp/mom-release-embedded.json
 
 python3 "mom/99 mom_test_orchestrator/host/mom_harness.py" run \
-  --mode integration --profile release --openmw /absolute/path/to/openmw \
-  --cpu-set CPU_LIST --output /tmp/mom-release-integration.json
+  --mode integration --profile release --openmw "$LUAU_OPENMW" --cpu-set CPU_LIST \
+  --output /tmp/mom-release-integration.json
+
+python3 "mom/99 mom_test_orchestrator/host/mom_harness.py" validate /tmp/mom-release-standalone.json
+python3 "mom/99 mom_test_orchestrator/host/mom_harness.py" validate /tmp/mom-release-embedded.json
+python3 "mom/99 mom_test_orchestrator/host/mom_harness.py" validate /tmp/mom-release-integration.json
 ```
 
-Run `mom_harness.py validate PATH` on each summary and preserve its complete
-artifact directory. Require workload assertions and applicable budgets to
-pass. For changed hot paths, also retain a compatible `standard` before/after
-comparison. Report its measured result, including inconclusive or incompatible
-results. Re-establish a baseline when workload meaning or instrumentation
-changes. See the [performance workflow](README.md#performance).
+---
 
-## 4. Inspect an ordinary install
+## 4. Manual Ordinary-Profile Smoke Check
 
-Extract the candidate package into a separate data directory. In an isolated
-ordinary gameplay profile, enable vanilla masters, MOM, and the vanilla-data
-example from the [author guide](../../mom/docs/MOD_AUTHOR_GUIDE.md). Keep the
-harness data directory out of this profile.
+1. Extract the candidate archive into a clean data directory (without the test harness).
+2. Enable vanilla masters, `00 OpenMW` / `mom.omwscripts`, and the tutorial patch from `02 Examples`.
+3. Visit Balmora's Eight Plates, verify the placed tapestry, leave and revisit, save, restart OpenMW, reload, and confirm no duplication.
+4. Run `I.MOM.selfcheck()` in `luag`, then verify the log:
+   ```sh
+   bash tools/smoke_profile.sh --log /absolute/path/to/openmw.log
+   ```
 
-At the example's stated location, check the visible result, leave and revisit,
-then save, exit OpenMW, load the save, and revisit again. Check that output
-counts remain stable and supported changes persist or revert as described.
-Call `I.MOM.selfcheck()` and inspect the MOM log entries. Exercise the install
-on both supported engines and record each build and data order.
+---
 
-The automated Balmora fixtures belong to the harness's isolated data root;
-they are not installed by the public examples directory. Use a focused world
-scenario when investigating those cases.
-
-`bash tools/smoke_profile.sh --log /absolute/path/to/openmw.log` checks bootstrap,
-selfcheck, and failure entries in the chosen ordinary-profile log. It does not
-verify visual behavior or replace the restart suite.
-
-## 5. Build the final archive and retain the record
+## 5. Build & Audit the Final Release ZIP
 
 ```sh
 python3 tools/release.py --build /tmp/mom-release.zip
 python3 tools/release.py --audit /tmp/mom-release.zip
 ```
 
-Record the commit, clean-tree state, engine/build identities, platform and game
-data, correctness receipt, performance artifacts and comparisons, package audit,
-manual smoke result, and any remaining known issue. Publish only the audited
-archive produced from those sources.
+Record the release commit hash, both engine build identities, and pass results in the release notes, and publish only the audited ZIP.

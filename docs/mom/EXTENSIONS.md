@@ -1,301 +1,150 @@
-# Implementing MOM extensions
+# Implementing MOM Extensions
 
-MOM discovers action families, guard families, and compatibility translators
-through OpenMW's virtual filesystem. These interfaces are for Lua extension
-authors. Ordinary patches should use the
-[configuration reference](../../mom/docs/AUTHORED_CONFIG_REFERENCE.md).
+MOM automatically discovers Lua extensions from OpenMW's virtual filesystem across three extension points: **Action families**, **Guard families**, and **Compatibility translators**.
 
-Use a built-in family as a working implementation and the linked validators
-for exact accepted fields. All compiled programs and saved values must be
-acyclic plain data: no functions, engine objects, metatables, or live interfaces.
-Module tables can contain hooks but should not retain mutable per-runtime state.
+All compiled programs, tokens, and persisted values must be **acyclic plain data** (tables, strings, numbers, booleans — no functions, metatables, or engine userdata). Keep module tables stateless; per-runtime state belongs in the ledger or runtime context.
 
-## Discovery and versions
+---
 
-| Kind | Discoverable path | Declared ID |
-| --- | --- | --- |
-| Action | `scripts/mom/actions/example.lua` | `example` |
-| Guard | `scripts/mom/guards/example/ready.lua` | `example.ready` |
-| Compatibility | `scripts/mom/compat/example/translator.lua` | `example` |
+## 1. Discovery Paths & Versioning
 
-Action discovery uses direct child files; subdirectories can hold implementation
-helpers. Guard discovery is recursive, with path segments becoming dotted IDs;
-`init.lua` is excluded. Put third-party guards in a namespace directory to avoid
-collisions. Compatibility discovery recognizes only `translator.lua` directly
-under its ID directory.
+| Extension kind | VFS discovery path | Derived `id` | Current `abiVersion` |
+| --- | --- | --- | :---: |
+| Action family | `scripts/mom/actions/<id>.lua` (direct children; helpers in subdirs) | `<id>` | `0` |
+| Guard family | `scripts/mom/guards/<ns>/<name>.lua` (recursive; skips `init.lua`) | `<ns>.<name>` | `0` |
+| Compatibility translator | `scripts/mom/compat/<id>/translator.lua` | `<id>` | `1` |
 
-IDs use lowercase segments matching `[a-z][a-z0-9_]*`, separated by dots where
-the discovery path permits them. The module's `id` must match its path. Every
-module declares an ABI version and a non-negative integer `behaviorVersion`.
-Action and guard families currently use `abiVersion = 0`; compatibility
-translators use `abiVersion = 1`. Actions and guards also require
-`programVersion`; actions with capture/reversal
-or family storage declare the corresponding `revertTokenVersion` and
-`storageVersion`.
+- Segment names must match `[a-z][a-z0-9_]*`, and the module's declared `id` must match its path.
+- Every module declares `abiVersion` and `behaviorVersion` (non-negative integers). Actions and guards also declare `programVersion`; actions with reversal/storage declare `revertTokenVersion` and `storageVersion`.
+- Invalid or duplicate IDs are quarantined during discovery; referencing an unavailable family fails compilation or saved-state activation. Runtime activation checks saved op ABI/token versions and calls `validateStoredState` before accepting persisted work.
 
-| Version | Change it when |
+| Bump when… | Field |
 | --- | --- |
-| `abiVersion` | Hook signatures or shared result contracts change |
-| `behaviorVersion` | The same program would produce a different meaning or effect |
-| `programVersion` | Compiled program representation or meaning changes |
-| `revertTokenVersion` | A retained capture/reversal token changes |
-| `storageVersion` | Family-owned durable storage changes |
+| Hook signatures or shared return contracts change | `abiVersion` |
+| Identical programs would behave differently | `behaviorVersion` |
+| Compiled program schema or semantics change | `programVersion` |
+| Persisted capture/revert token layout changes | `revertTokenVersion` |
+| Family-owned persistent storage layout changes | `storageVersion` |
 
-The registries validate identities, versions, and required methods. Invalid or
-duplicate entries are quarantined and logged; all claimants to a duplicate ID
-are excluded. Using an unavailable family fails compilation or saved-state
-activation. Runtime binding requires exact supported versions for installed
-and saved work. See
-[`module_loader.lua`](<../../mom/00 OpenMW/scripts/mom/compiler/module_loader.lua>),
-[`extension_registry.lua`](<../../mom/00 OpenMW/scripts/mom/compiler/extension_registry.lua>),
-and [`coordinator.lua`](<../../mom/00 OpenMW/scripts/mom/runtime/coordinator.lua>).
+Reference implementations: [`module_loader.lua`](<../../mom/00 OpenMW/scripts/mom/compiler/module_loader.lua>), [`extension_registry.lua`](<../../mom/00 OpenMW/scripts/mom/compiler/extension_registry.lua>), [`coordinator.lua`](<../../mom/00 OpenMW/scripts/mom/runtime/coordinator.lua>).
 
-## Action families
+---
 
-Native YAML verbs map to families in
-[`authored_contract.lua`](<../../mom/00 OpenMW/scripts/mom/compiler/authored_contract.lua>).
-Installing a Lua family does not itself add another YAML verb. The shipped
-mappings are `place`/`attach` to `place_ref`, `modify` to `modify_ref`, `inventory`
-to `modify_inventory`, and `kill` to `kill_actor`.
+## 2. Action Families
 
-Native and imported declarations pass through one engine-free semantic frontend
-before execution placement. It normalizes selectors, predicates, conditions,
-choices, type intersections and dependencies. Promotion then analyzes complete
-replacement groups so one promoted model write cannot silently change a
-competing runtime selector or KEEP route.
+YAML verbs map to action families in [`authored_contract.lua`](<../../mom/00 OpenMW/scripts/mom/compiler/authored_contract.lua>) (`place`/`attach` → `place_ref`, `modify` → `modify_ref`, `inventory` → `modify_inventory`, `kill` → `kill_actor`, `record` → `record_content`, `leveled` → `leveled_content`).
 
-Both invocations discover and translate the same source formats. Action/guard
-runtime hooks remain GLOBAL-only, after semantic placement; LOAD does not bind
-those registries. `record`, `leveled` and eligible uniform model changes use the
-typed content backend. Actual record/cell resolution and backend capability
-checks follow the common decision. Conservative unknown/interference cases
-remain runtime work rather than independently inferring ownership from the two
-catalogs. Validation failures do not create a fallback execution route.
+### Compiler & Metadata Hooks
 
-Keep normalization and translator dependencies free of live-world services. A
-runtime extension must not depend on promoted work being passed through its
-family preparation hook. See the [compiler architecture](ARCHITECTURE.md#from-openmw-callbacks-to-an-active-plan) for the
-boundary contract.
+| Field / Hook | Required? | Purpose |
+| --- | :---: | --- |
+| `publicFields` | Yes | Array of family-owned authored field names. |
+| `behavior` or `resolveBehavior(spec)` | Yes | Scope (`ref`/`cell`), explicit-cell requirement, parent/child eligibility, and cell-mutation flags. |
+| `execution` | Optional | `'global'` (default), `'load'`, or `'split'`. |
+| `prepareAction(input, queries, ctx)` | Yes (GLOBAL/split) | Validate syntax, prepare `MomFamilyInput`, and record needed record/mesh lookups in `queries`; return `prepared` or `nil, errors`. |
+| `compileAction(input, ctx)` | Yes (GLOBAL/split) | Lower into an array of `mom-family-program` envelopes (or `{}` for an intentional no-op, or `nil, errors`). Declare all `claims` upfront (`contracts/claim_contract.lua`). |
+| `validateProgram(program, errors, actionId, helpers)` | Yes (GLOBAL/split) | Append validation errors for compiled program payloads. |
+| `validateStoredState(kind, value, ctx)` | Optional | Validate persisted tokens/programs during save activation. |
+| `analyzeLoad(node, opts)` / `readFootprint(node)` / `compileLoad(node, loadCtx)` | LOAD / `split` | Action-owned LOAD eligibility proof, interference footprint, and content-plan lowering (see [`actions/place_ref/load.lua`](<../../mom/00 OpenMW/scripts/mom/actions/place_ref/load.lua>)). |
+| `outputTypeEnvelope(input, ctx)` | Output parents | Prove possible output OpenMW types so child actions validate cleanly. |
+| `prepareTargetFilters(actions)` / `prepareDiscoveryFilters(actions)` | Optional | Build read-only per-action target filter maps at activation (used by `place_ref` choice routing). |
 
-An action module supplies these compiler and validation hooks:
-
-| Hook | Responsibility |
-| --- | --- |
-| `prepareAction(input, queries, context)` | Validate family syntax, prepare its owned input, and collect record/mesh query requirements; return prepared input or `nil, errors` |
-| `compileAction(input, context)` | Return an array of final family programs or `nil, errors`; an empty array means the action legitimately contributes no work |
-| `validateProgram(program, errors, actionId, helpers)` | Append program validation errors to the supplied array |
-| `validateStoredState(kind, value, context)` | Validate the family's retained program, token, state, provenance, or storage value for the requested role |
-
-`publicFields` identifies family-owned authored fields. `behavior`, or
-`resolveBehavior(spec)`, describes scope, explicit-cell requirements, parent
-and child support, and whether the action changes cell contents. Use
-[`kill_actor.lua`](<../../mom/00 OpenMW/scripts/mom/actions/kill_actor.lua>) for a
-small family and [`place_ref.lua`](<../../mom/00 OpenMW/scripts/mom/actions/place_ref.lua>)
-for dynamic behavior and outputs.
-
-`prepareAction` receives a `MomFamilyInput`, after shared cell and predicate
-processing. `compileAction` returns `mom-family-program` envelopes with a final
-`spec.program`, declared `claims`, and boolean `reversible`. Optional target
-facts describe resolved selection, candidate types, direct targets, and query
-cells. The compiler assigns semantic action IDs after lowering. Constructors,
-field ownership, and the envelope validator are in
-[`source_ir.lua`](<../../mom/00 OpenMW/scripts/mom/compiler/source_ir.lua>).
-Compiler contexts supply lazy cell/record access and model checks through
-[`compile_context.lua`](<../../mom/00 OpenMW/scripts/mom/compiler/compile_context.lua>).
-
-Declare the complete set of claims before runtime arbitration. Claims cannot
-be widened opportunistically after discovering the physical target. Shared
-claim names and private `family:<family-id>:<name>` claims are checked by
-[`claim_contract.lua`](<../../mom/00 OpenMW/scripts/mom/contracts/claim_contract.lua>).
-An output-producing family can supply `outputTypeEnvelope(input, context)` for
-child compilation. Optional `prepareTargetFilters(actions)` and
-`prepareDiscoveryFilters(actions)` return action-ID-to-predicate maps during
-activation. These selection hooks must be read-only and conservative when
-they cannot establish a match or output type. Their integration is in
-[`coordinator.lua`](<../../mom/00 OpenMW/scripts/mom/runtime/coordinator.lua>)
-and [`reconciler.lua`](<../../mom/00 OpenMW/scripts/mom/runtime/reconciler.lua>).
-
-Runtime hooks use these signatures:
+### Runtime & Reconciliation Hooks
 
 ```lua
-capture(program, target, ctx)
-apply(program, target, token, ctx)
-revert(token, target, ctx)
-advance(op, target, ctx)
-onLocalComplete(op, completion, ctx)
-reassert(op, target, ctx)
+capture(program, target, ctx)                      -- Read-only snapshot; return plain revert token
+apply(program, target, token, ctx)                 -- Perform mutation; return result table
+revert(token, target, ctx)                         -- Undo reversible mutation; return result table
+advance(op, target, ctx)                           -- Resume pending multi-frame op
+onLocalComplete(op, completion, ctx)               -- Handle actor-local script reply
+reassert(op, target, ctx)                          -- Optional reassertion on cell re-entry
+matchesTarget(program, target, facts, ctx)         -- Optional runtime match refinement
+transitionKey(program)                             -- Optional O(1) key for in-place static replacement
+matchesTransitionSource(program, prevOp)           -- Optional predicate for static replacement eligibility
+acceptsGeneratedRoot(program)                      -- Return false to skip MOM-generated outputs as root targets
 ```
 
-`apply` is required for global execution; LOAD-only families declare
-`execution = 'load'` and `planLoad`, while split families declare
-`execution = 'split'` and both `planLoad` and runtime hooks. Reversible state
-operations supply `capture` and `revert`, returning a plain-data revert token.
-`apply` and `revert` return a result table with `status` equal to `applied`,
-`noop`, `failed`, or `pending` (plus optional `changedClaims`, `outputs`,
-`pending`, `recoveryCells`, and `message`). Pending operations carry a plain
-`pending` table (`phase`, `nextFrame`, and optional local lease state) resumed
-by `advance` or `onLocalComplete`.
+- `apply`, `revert`, and `advance` return `{status = 'applied' | 'noop' | 'failed' | 'pending', changedClaims?, outputs?, pending?, recoveryCells?, message?}`.
+- `ctx` (supplied by [`runtime/executor.lua`](<../../mom/00 OpenMW/scripts/mom/runtime/executor.lua>)) provides `frame`, `opId`, `actionId`, `targetId`, `target`, `targetFacts`, `authoredRecordId`, `ledger`, `world`, `refOps`, `inventoryOps`, `placementOps`, `actorOps`, `localBroker`, `targetFilter`, and `choicePort`.
+- Always roll back partial mutations if a later step inside `apply` fails.
+- See [`kill_actor.lua`](<../../mom/00 OpenMW/scripts/mom/actions/kill_actor.lua>) for a minimal family and [`place_ref.lua`](<../../mom/00 OpenMW/scripts/mom/actions/place_ref.lua>) for a full split family with outputs and transitions.
 
-The executor ([`runtime/executor.lua`](<../../mom/00 OpenMW/scripts/mom/runtime/executor.lua>))
-supplies `frame`, `opId`, `actionId`, `targetId`, `target`, `targetFacts`,
-`authoredRecordId`, `ledger`, `world`, `refOps`, `inventoryOps`, `placementOps`,
-`actorOps`, `localBroker`, `targetFilter`, and `choicePort`. Treat supplied
-programs as immutable. Actions that relocate references return `recoveryCells`
-in their capture token or result so cross-cell targets remain discoverable on
-subsequent ticks and restarts.
+---
 
-## Guard families
+## 3. Guard Families
 
-A guard module supplies:
+Put third-party guards in your own namespace folder (e.g. `scripts/mom/guards/my_mod/ready.lua` → `id = 'my_mod.ready'`).
 
 ```lua
-return {
-  id = 'example.ready',
+local M = {
+  id = 'my_mod.ready',
   abiVersion = 0,
   behaviorVersion = 0,
   programVersion = 0,
-  providerInterface = 'ExampleState', -- Optional external provider.
-  lowerTuple = lowerTuple,
-  compileProgram = compileProgram,
-  evaluate = evaluate,
+  providerInterface = 'MyModState', -- Optional; binds openmw.interfaces.MyModState.read
+}
+
+function M.lowerTuple(tuple, path)
+  if type(tuple[2]) ~= 'string' or type(tuple[3]) ~= 'boolean' then
+    return nil, path .. ': expected [my_mod.ready, key, boolean]'
+  end
+  return {type = M.id, key = tuple[2], expected = tuple[3]}
+end
+
+function M.compileProgram(spec, ctx)
+  return {
+    program = {key = spec.key, expected = spec.expected},
+    subscriptions = {ctx.guardEvent('my_mod', 'changed', spec.key)},
+  }
+end
+
+function M.evaluate(program, ctx)
+  local provider = ctx.providers[M.id]
+  local value, reason = provider and provider.read(program.key)
+  if type(value) ~= 'boolean' then
+    return {state = 'unknown', reason = tostring(reason or 'provider unavailable')}
+  end
+  return {state = value == program.expected and 'active' or 'inactive'}
+end
+
+return M
+```
+
+### Guard Truth & Events
+
+- `evaluate` returns `{state = 'active'}`, `{state = 'inactive'}`, or `{state = 'unknown', reason = '...'}` (no `reason` on known states; exceptions or malformed returns become `unknown`).
+- In a conjunction (`when`), `inactive` overrides `unknown`. On `unknown`, MOM retains existing work without applying new work.
+- External providers notify MOM after publishing new state:
+  ```lua
+  core.sendGlobalEvent('MOM_GuardEvent', {event = 'external:my_mod:changed:some_key'})
+  ```
+- Built-in guards receive `ctx.readTime`, `ctx.readWeather`, and `ctx.readQuestStage`. Reference: [`quest_stage.lua`](<../../mom/00 OpenMW/scripts/mom/guards/quest_stage.lua>), [`runtime/guards.lua`](<../../mom/00 OpenMW/scripts/mom/runtime/guards.lua>).
+
+---
+
+## 4. Compatibility Translators
+
+Translators run in **both LOAD and GLOBAL** and convert foreign file formats into ordinary `mom-source-action` specs using [`source_ir.lua`](<../../mom/00 OpenMW/scripts/mom/compiler/source_ir.lua>).
+
+```lua
+local M = {
+  id = 'my_format',
+  abiVersion = 1,
+  behaviorVersion = 0,
+  allowEmptySources = true, -- Optional; allow returning {} without error
+  configDirs = {'scripts/my_format/data'},
 }
 ```
 
-`lowerTuple(tuple, path)` validates its compact tuple and returns a normalized
-plain spec with `type = 'example.ready'`, or `nil, error`. `path` is a diagnostic
-path string. Include the family type in the returned spec so guard compilation
-can resolve its evaluator.
+Declare **exactly one** ownership hook:
+- `matchesPath(path)` — claim files by VFS path (may also supply `load(path)` to replace YAML decoding, and optional `sourcePolicy(path)` returning `{onLoadError = 'skip'}` for formats that skip malformed files).
+- `claims({path = path, config = decodedConfig})` — claim already-decoded YAML by structure.
 
-`compileProgram(spec, context)` returns `{program = {...}, subscriptions = {...}}`.
-The current compile helper is `context.guardEvent(namespace, eventName, key)`;
-it creates a canonical external event name. Subscription strings are sorted
-and deduplicated before manifest assembly. For example:
+Implement `translateSource(source)`:
+- Return `actions, true` (or `actions, true, nil, warningStrings`) on success.
+- Return `nil, false` to decline the file.
+- Return `nil, true, {kind = '...', message = '...'}` to reject malformed input.
 
-```lua
-local function compileProgram(spec, context)
-  return {
-    program = {key = spec.key, expected = spec.expected},
-    subscriptions = {context.guardEvent('example', 'changed', spec.key)},
-  }
-end
-```
+**Boundary rules:** Translators must stay pure and engine-free — do not resolve OpenMW records/cells, sample winners, emit `familyInput`, or pick LOAD vs. GLOBAL. Express plugin gates, seeded sampling, priorities, and composition order as ordinary declarative fields on `mom-source-action` so shared normalization and promotion handle everything uniformly.
 
-`evaluate(program, context)` returns exactly one of:
-
-```lua
-{state = 'active'}
-{state = 'inactive'}
-{state = 'unknown', reason = 'provider unavailable'}
-```
-
-A known result has no `reason`; unknown requires a non-empty string reason.
-Extra fields, invalid results, and exceptions become unknown. In a conjunction,
-inactive takes precedence over unknown. Evaluation may be split across ticks;
-a new owner wakeup discards partial evaluation so mixed observations do not
-publish truth. Write each hook to do bounded work and keep continuation state
-out of the module.
-
-An external guard declares `providerInterface`. During evaluation it reads:
-
-```lua
-local provider = context.providers['example.ready']
-local value, reason = provider.read(program.key)
-if type(value) ~= 'boolean' then
-  return {state = 'unknown', reason = tostring(reason or 'provider unavailable')}
-end
-return {state = value == program.expected and 'active' or 'inactive'}
-```
-
-The wrapper resolves `openmw.interfaces.ExampleState.read` on each call and
-protects the read from exceptions. The provider's `read` arguments and returned
-value are the protocol agreed with that guard. Built-ins instead use
-`readTime`, `readWeather`, and `readQuestStage`. Changing a provider name, read
-protocol, or truth interpretation changes guard behavior and needs a matching
-behavior version.
-
-A provider publishes state before sending a wakeup:
-
-```lua
-core.sendGlobalEvent('MOM_GuardEvent', {
-  event = 'external:example:changed:some_key',
-})
-```
-
-External event names have the form `external:<namespace>:<event>[:<key>]`.
-Namespace and event use lowercase identifier segments. The optional key is
-normalized to lowercase by `guardEvent` and cannot contain a colon. Events
-request evaluation of interested owners and may coalesce; evaluation reads
-current provider state and does not receive event payloads.
-
-| Truth | New work | Existing work |
-| --- | --- | --- |
-| `active` | Eligible to apply | Reconcile |
-| `inactive` | No application | Revert where the action supports it |
-| `unknown` | No application | Retain |
-
-See [`quest_stage.lua`](<../../mom/00 OpenMW/scripts/mom/guards/quest_stage.lua>),
-[`guard_program.lua`](<../../mom/00 OpenMW/scripts/mom/compiler/guard_program.lua>),
-[`guards.lua`](<../../mom/00 OpenMW/scripts/mom/runtime/guards.lua>),
-and [`guard_reads.lua`](<../../mom/00 OpenMW/scripts/mom/openmw/guard_reads.lua>)
-for working compiler, runtime, and provider boundaries.
-
-## Compatibility translators
-
-A translator declares `id`, `abiVersion = 1`, `behaviorVersion`, and
-`translateSource(source)`. It declares exactly one ownership method:
-
-- `matchesPath(path)` for path-owned data, or
-- `claims({path = path, config = decodedConfig})` for content-owned data.
-
-`configDirs` lists additional VFS directories to discover. A path-owned
-translator may supply `load(path)` to replace YAML loading for its format;
-otherwise the ordinary loader is used. `load` returns a config table or
-`nil, error`.
-
-Discovery and translation run in both contexts. A translator may read its
-format's static source data and map spelling, defaults and meaningful ordering;
-it must not resolve engine records/cells, sample winners, choose an execution
-layer or build executor plans. Express plugin conditions and admission choices
-as ordinary action data for the shared frontend.
-
-`translateSource` receives source metadata and decoded `source.config`. Return
-`actions, true` for translated data; return `nil, false` to decline it; return
-`nil, true, error` to reject it. `error` includes a diagnostic `kind` and
-`message`. Multiple claiming translators reject the source; load order does not
-choose one. Native sources may remain unclaimed.
-
-An optional fourth return value is an array of diagnostic strings. For a format
-whose documented decoding policy skips malformed files, optional
-`sourcePolicy(path)` can return `{onLoadError = 'skip'}`; omission keeps the
-normal fatal load policy. The shared source frontend performs that skip and
-reports it. This policy does not authorize hidden catalog reads or alternate
-execution.
-
-Returned actions use `mom-source-action` records from
-[`source_ir.lua`](<../../mom/00 OpenMW/scripts/mom/compiler/source_ir.lua>), with
-diagnostic ID, source provenance and an ordinary action `spec`. The family is
-derived from the verb centrally; a supplied family must agree with that verb.
-Source children use the record's `children` array. Translator-provided
-`familyInput`, compiled profiles and planner nodes are not admitted source
-forms. `MomFamilyInput` remains the compiler-owned prepared representation
-received by action-family hooks; it is not a translator escape hatch. The shared
-[source-action validator](<../../mom/00 OpenMW/scripts/mom/compiler/source_action_contract.lua>)
-checks the full returned tree before ordinary lowering. Empty output is accepted
-only with `allowEmptySources = true`. Source locations identify diagnostics;
-they do not substitute for semantic action identity. A foreign permanent
-placement ID or seed that defines behavior must become ordinary semantic data,
-such as `spec.key`, `admission` or a replacement expression. Preserve required
-priority/conflict metadata and explicit composition ordering rather than
-encoding behavior in diagnostic labels.
-
-[`sss/translator.lua`](<../../mom/00 OpenMW/scripts/mom/compat/sss/translator.lua>)
-is the smallest shipped translator. DOR adds a specialized loader; VFR handles
-multiple data categories through ordinary choices, placements and `leveled`
-actions. There is no separate VFR list planner or source stream. Shared MOM
-code compiles spatial profiles, evaluates deterministic declaration admission,
-resolves targets, composes list operations and places execution. Their
-installation behavior is described in the public documentation.
-
-Before distributing an extension, cover malformed inputs, deterministic
-compilation, missing providers/targets, exact versions, and saved in-flight
-work. Add real-engine or restart coverage for new mutation and recovery behavior.
+Reference implementations: [`sss/translator.lua`](<../../mom/00 OpenMW/scripts/mom/compat/sss/translator.lua>) (minimal), [`dor/translator.lua`](<../../mom/00 OpenMW/scripts/mom/compat/dor/translator.lua>) (custom loader), [`vfr/translator.lua`](<../../mom/00 OpenMW/scripts/mom/compat/vfr/translator.lua>) (multi-category).

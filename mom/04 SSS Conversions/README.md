@@ -80,7 +80,7 @@ file does not undo its completed world edits. Definition edits are rebuilt for
 each process: removing the Uniform Static Models option and restarting stops
 its base-model patch. This does not remove old reference replacement chains.
 The
-[MOM author guide](../docs/MOD_AUTHOR_GUIDE.md#changes-and-existing-saves)
+[MOM author guide](../docs/MOD_AUTHOR_GUIDE.md#4-working-with-existing-saves)
 explains the relevant save and reversal rules.
 
 ## The world-state distinction
