@@ -278,6 +278,41 @@ local function compilerCreatureMeshReplacement()
     table.concat(errors or {'distinct keyed Creature replacements were rejected'}, ' | '))
 end
 
+local function recordReplacementPreservesOwnerWhenDisablingOriginal()
+  local owner = {recordId = 'arrille', factionId = 'thieves guild', factionRank = 2}
+  local ctx = {
+    opId = 'op:owner', targetId = 'content:000001:morrowind.esm',
+    targetFacts = {recordId = 'source_static', typeName = 'Static', position = {x = 0, y = 0, z = 0}},
+    refOps = {
+      read = function()
+        return {
+          enabled = true, scale = 1, owner = owner,
+          cell = {id = 'Balmora', key = 'balmora', isExterior = false},
+          position = {x = 1, y = 2, z = 3},
+          rotation = {yaw = 0, pitch = 0, roll = 0},
+        }, nil
+      end,
+    },
+    placementOps = {
+      sourceRecordInfo = function() return {model = 'meshes/orig.nif', isRespawning = false}, nil end,
+    },
+  }
+  local replaceTok = assert(place_runtime.capture(makeRelativeProgram({
+    disableOriginal = true, targetKind = 'record_id', targetValue = 'target_lamp',
+  }), {}, ctx))
+  expect(replaceTok.slots[1].owner ~= nil
+      and replaceTok.slots[1].owner.recordId == 'arrille'
+      and replaceTok.slots[1].owner.factionId == 'thieves guild'
+      and replaceTok.slots[1].owner.factionRank == 2,
+    'record_id replacement with disableOriginal=true dropped original ref owner')
+
+  local attachTok = assert(place_runtime.capture(makeRelativeProgram({
+    disableOriginal = false, targetKind = 'record_id', targetValue = 'target_lamp',
+  }), {}, ctx))
+  expect(attachTok.slots[1].owner == nil,
+    'non-disabling record_id attachment unexpectedly copied source ref owner')
+end
+
 local CASES = {
   {'compiler output type', compilerCarriesResolvedOutputType},
   {'compiler relative direct targets', compilerCarriesRelativeDirectTargets},
@@ -285,6 +320,8 @@ local CASES = {
   {'compiler large placement cardinality',
     compilerPreservesLargePlacementPrograms},
   {'compiler Creature mesh replacement', compilerCreatureMeshReplacement},
+  {'record replacement preserves owner when disabling original',
+    recordReplacementPreservesOwnerWhenDisablingOriginal},
 }
 
 function M.run()

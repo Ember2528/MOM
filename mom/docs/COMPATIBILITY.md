@@ -115,7 +115,7 @@ The supported replacement data includes:
 - seeded spatial choices, category clustering defaults, region and climate
   weights, latitude/longitude and climate gradients, cell and point weights,
   and interior overrides;
-- native respawning Container replacement, preserving contents and locks.
+- native respawning Container replacement, preserving contents, locks and ownership.
 
 Record-specific `KEEP` stops replacement for that record. Mesh `KEEP` can fall
 through to another matching rule. Unavailable alternatives retain their
