@@ -134,6 +134,44 @@ function M.run()
           and load.loadFingerprint == global.loadFingerprint, 'phase invocations discovered different native sources')
       end)
     end},
+    {'compatErrorPolicy=skip quarantines broken compat files across both LOAD and GLOBAL', function()
+      withHost(function(_, options, compile)
+        local vfs, markup = require('openmw.vfs'), require('openmw.markup')
+        local oldPaths, oldYaml = vfs.pathsWithPrefix, markup.loadYaml
+        local badVfrPath = 'scripts/variationframework/placements/data/bad.yaml'
+        options.vfr = true
+        options.compatErrorPolicy = 'skip'
+        vfs.pathsWithPrefix = function(prefix)
+          if prefix == 'scripts/mom/compat' then
+            local once = false
+            return function()
+              if not once then once = true; return 'scripts/mom/compat/vfr/translator.lua' end
+            end
+          end
+          if prefix == 'scripts/variationframework/placements/data/' then
+            local once = false
+            return function()
+              if not once then once = true; return badVfrPath end
+            end
+          end
+          return oldPaths(prefix)
+        end
+        markup.loadYaml = function(path)
+          if path == badVfrPath then
+            return {placements = {{id = 'spawn.bad', spawn = true, record = 'rat', interior = 'Balmora', position = {0, 0, 0}}}}
+          end
+          return oldYaml(path)
+        end
+        local load, global = compile('LOAD'), compile('GLOBAL')
+        expect(load.status == 'accepted' and global.status == 'accepted'
+          and #load.plan.writes == 1 and load.loadFingerprint == global.loadFingerprint,
+          'compatErrorPolicy=skip did not keep LOAD and GLOBAL aligned while skipping broken compat file')
+        options.compatErrorPolicy = 'reject'
+        local rejectedLoad = compile('LOAD')
+        expect(rejectedLoad.status == 'rejected',
+          'default/reject compatErrorPolicy did not reject broken compat file')
+      end)
+    end},
   })
 end
 return M

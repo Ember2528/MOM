@@ -172,11 +172,23 @@ function M.loadAggregated(inputs, opts)
   local catalog = opts.catalog
   local compatRegistry = catalog and catalog.compat or nil
   local collector = opts.diagnosticCollector or compile_diagnostics.new()
+  local skipCompatErrors = opts.compatErrorPolicy == 'skip'
   local aggregated = {
     sourceAttempts = {},
     loadInputs = {},
     diagnosticCollector = collector,
+    compatErrorPolicy = skipCompatErrors and 'skip' or nil,
   }
+  local function skipCompatSource(source, adapterId, category, phase, message)
+    appendResolvedAttempt(aggregated, source, adapterId or 'unknown', {}, true)
+    collector:append({
+      category = category, severity = 'warn', phase = phase,
+      sourcePath = source and source.path or nil,
+      code = 'compat_source_skipped', message = tostring(message),
+    })
+    log.warn('compat', '%s: %s; skipped by compatErrorPolicy=skip',
+      tostring(source and source.path or '<compat>'), tostring(message))
+  end
   local variantContext = variant_resolver.createContext()
   local sources = assert(
     type(inputs.configSources) == 'table' and inputs.configSources,
@@ -194,15 +206,20 @@ function M.loadAggregated(inputs, opts)
     local path = source.path
     local preliminaryAdapterId, adapterError = config_sources.adapterId(source, compatRegistry)
     if adapterError then
-      appendFailedAttempt(
-        aggregated,
-        source,
-        'load_error',
-        adapterError,
-        preliminaryAdapterId or 'unknown'
-      )
-      log.error('bootstrap', 'Config %s adapter ownership failed: %s',
-        tostring(path), tostring(adapterError.message or adapterError))
+      if skipCompatErrors and source.compat then
+        skipCompatSource(source, preliminaryAdapterId, 'import-warning', 'load',
+          adapterError.message or adapterError)
+      else
+        appendFailedAttempt(
+          aggregated,
+          source,
+          'load_error',
+          adapterError,
+          preliminaryAdapterId or 'unknown'
+        )
+        log.error('bootstrap', 'Config %s adapter ownership failed: %s',
+          tostring(path), tostring(adapterError.message or adapterError))
+      end
     else
       local rawCfg, loadErr = config_sources.loadRaw(source, compatRegistry)
       if loadErr and config_sources.sourcePolicy(source).onLoadError == 'skip' then
@@ -211,6 +228,9 @@ function M.loadAggregated(inputs, opts)
           sourcePath = path, code = 'optional_source_skipped', message = tostring(loadErr.message or loadErr)})
         log.warn('source', '%s: %s; skipped by declared source admission policy',
           tostring(path), tostring(loadErr.message or loadErr))
+      elseif loadErr and skipCompatErrors and source.compat then
+        skipCompatSource(source, preliminaryAdapterId, 'source-load-failed', 'load',
+          loadErr.message or loadErr)
       elseif loadErr then
         appendFailedAttempt(
           aggregated,
@@ -226,7 +246,10 @@ function M.loadAggregated(inputs, opts)
           config_sources.translateSource(source, rawCfg, compatRegistry)
         adapterId = adapterId or preliminaryAdapterId
           or (sourceKind(source, translatedByCompat) == 'native' and 'native' or 'unknown')
-        if translateErr then
+        if translateErr and skipCompatErrors and (source.compat or translatedByCompat) then
+          skipCompatSource(source, adapterId, 'import-warning', 'import',
+            translateErr.message or translateErr)
+        elseif translateErr then
           appendFailedAttempt(
             aggregated,
             source,

@@ -241,6 +241,66 @@ local function duplicatePlacementIds()
   end)
 end
 
+local function compatErrorPolicySkipQuarantinesCompatOnly()
+  -- 1. Broken VFR file (translate error) is quarantined under compatErrorPolicy='skip'
+  --    while native, SSS, DOR, and valid VFR sources still compile and activate!
+  local docs = documents()
+  local badVfr = 'scripts/variationframework/placements/data/unsupported_draft.yaml'
+  docs[badVfr] = {
+    placements = {{
+      id = 'draft.one', record_draft = {type = 'Static', template = 'native_target', model = 'x.nif'},
+      interior = 'Balmora', position = {1, 2, 3},
+    }},
+  }
+  local badVfrCategory = 'scripts/variationframework/plants/data/bad_weights.yaml'
+  docs[badVfrCategory] = {
+    variants = {['c/vfr_shared.nif'] = {meshes = {'c/vfr_target.nif'}}},
+    weights = {default = {0, 1, 0}}, -- wrong length: fails during translate/compile!
+  }
+  withSources(docs, function(plan, catalog)
+    local input = bootstrap.loadAggregated(plan, {catalog = catalog, compatErrorPolicy = 'skip'})
+    local result = compiler.compile(input, catalog)
+    expect(result.status == 'accepted' and result.manifest ~= nil,
+      'compatErrorPolicy=skip failed to compile remaining valid sources: '
+        .. tostring(result.fatal and result.fatal.message))
+    expect(#result.manifest.actionIds == 5,
+      'compatErrorPolicy=skip dropped valid native/compat actions: got ' .. tostring(#result.manifest.actionIds))
+    local skipWarnings = 0
+    for _, diag in ipairs(result.diagnostics.summary.diagnostics.samples or {}) do
+      if diag.code == 'compat_source_skipped' and diag.severity == 'warn' then
+        skipWarnings = skipWarnings + 1
+      end
+    end
+    expect(skipWarnings == 2,
+      'expected 2 compat_source_skipped warnings, got ' .. tostring(skipWarnings))
+  end)
+
+  -- 2. Duplicate placement key across two compat files: first succeeds, second is quarantined!
+  local first = 'scripts/variationframework/placements/data/a_first.yaml'
+  local second = 'scripts/variationframework/placements/data/b_second.yaml'
+  withSources({
+    [NATIVE] = documents()[NATIVE],
+    [first] = {placements = {{id = 'dup.id', record = 'native_target', interior = 'Balmora', position = {1, 2, 3}}}},
+    [second] = {placements = {{id = 'DUP.ID', record = 'native_target', interior = 'Balmora', position = {4, 5, 6}}}},
+  }, function(plan, catalog)
+    local input = bootstrap.loadAggregated(plan, {catalog = catalog, compatErrorPolicy = 'skip'})
+    local result = compiler.compile(input, catalog)
+    expect(result.status == 'accepted' and #result.manifest.actionIds == 2,
+      'duplicate compat placement key was not quarantined under compatErrorPolicy=skip: '
+        .. tostring(result.fatal and result.fatal.message))
+  end)
+
+  -- 3. Native errors remain strictly fatal even when compatErrorPolicy='skip'!
+  local badNative = documents()
+  badNative[NATIVE].variants.default.actions[1].familyInput = {rules = {}}
+  withSources(badNative, function(plan, catalog)
+    local input = bootstrap.loadAggregated(plan, {catalog = catalog, compatErrorPolicy = 'skip'})
+    local result = compiler.compile(input, catalog)
+    expect(result.status == 'rejected' and result.manifest == nil,
+      'compatErrorPolicy=skip silenced a fatal native configuration error')
+  end)
+end
+
 function M.run()
   return test_support.runCases('pure VFR integration', {
     {'mixed source discovery and compile', discoveryAndCompile}, {'example-only no-op', emptyExamples},
@@ -249,6 +309,7 @@ function M.run()
     {'internal source admission is exclusive', strictInternalAdmission},
     {'canonical profile names stay unambiguous', canonicalCollisionRejectsSet},
     {'placement IDs stay unique across files', duplicatePlacementIds},
+    {'compatErrorPolicy=skip quarantines compat errors while keeping native atomic', compatErrorPolicySkipQuarantinesCompatOnly},
   })
 end
 

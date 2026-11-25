@@ -52,11 +52,23 @@ function M.compile(opts)
   opts = opts or {}
   local phase, phaseError = load_planner.phase(opts.phase)
   if not phase then return rejected('compiler_phase_invalid', phaseError) end
+  local compatErrorPolicy = opts.compatErrorPolicy
+  if compatErrorPolicy ~= nil and compatErrorPolicy ~= 'reject' and compatErrorPolicy ~= 'skip' then
+    return rejected('compat_policy_invalid', 'compatErrorPolicy must be reject or skip')
+  end
   local catalog, requireGuards, requireActions = discoverCatalog()
   local inputs = bootstrap.resolveInputs(opts, catalog)
-  local aggregated = bootstrap.loadAggregated(inputs, {catalog = catalog, deferPlacement = true})
+  local aggregated = bootstrap.loadAggregated(inputs, {
+    catalog = catalog,
+    deferPlacement = true,
+    compatErrorPolicy = compatErrorPolicy,
+  })
   local semantic, normalizationErrors = require('scripts.mom.compiler.action_frontend').normalize(
-    aggregated.sourceAttempts, {activeContent = opts.activeContent})
+    aggregated.sourceAttempts, {
+      activeContent = opts.activeContent,
+      compatErrorPolicy = compatErrorPolicy,
+      diagnosticCollector = aggregated.diagnosticCollector,
+    })
   if not semantic then return rejected('action_semantics_invalid', normalizationErrors) end
 
   -- Lower & validate guards in BOTH LOAD and GLOBAL so broken guard syntax

@@ -67,10 +67,12 @@ local function normalizeAction(action, active, isChild, isGuarded)
         path .. '.admission.' .. tostring(field) .. ': is not allowed')
     end
     if not requirements(admission, active, path .. '.admission') then return nil end
-    local chance = admission.chance == nil and 1 or admission.chance
-    assert(finite(chance) and chance >= 0 and chance <= 1, path .. '.admission.chance: expected probability')
-    local key = admission.key or spec.key or canonical.assertHash(spec)
-    if sampling.unit(key, admission.seed, admission.salt or 'condition') >= chance then return nil end
+    if admission.chance ~= nil then
+      local chance = admission.chance
+      assert(finite(chance) and chance >= 0 and chance <= 1, path .. '.admission.chance: expected probability')
+      local key = admission.key or spec.key or canonical.assertHash(spec)
+      if sampling.unit(key, admission.seed, admission.salt or 'condition') >= chance then return nil end
+    end
     spec.admission = nil
   end
   if spec.key ~= nil then
@@ -115,16 +117,34 @@ function M.normalize(attempts, options)
   if active == nil then
     active = require('scripts.mom.common.content_files').activeSet(require('openmw.core').contentFiles)
   end
+  local skipCompat = options and options.compatErrorPolicy == 'skip'
+  local collector = options and options.diagnosticCollector or nil
   local errors = {}
   for _, attempt in ipairs(attempts) do
     if attempt.status == 'resolved' then
-      local normalized = {}
+      local normalized, attemptErrors = {}, {}
       for _, action in ipairs(attempt.actions or {}) do
         local ok, result = pcall(normalizeAction, action, active, false)
-        if not ok then errors[#errors + 1] = tostring(attempt.path) .. ': ' .. tostring(result)
+        if not ok then attemptErrors[#attemptErrors + 1] = tostring(attempt.path) .. ': ' .. tostring(result)
         elseif result then normalized[#normalized + 1] = result end
       end
-      attempt.actions = normalized
+      if #attemptErrors > 0 and skipCompat and attempt.kind == 'compat' then
+        attempt.actions = {}
+        local message = table.concat(attemptErrors, ' | ')
+        if collector ~= nil and type(collector.append) == 'function' then
+          collector:append({
+            category = 'import-warning', severity = 'warn', phase = 'import',
+            sourcePath = attempt.sourcePath or attempt.path,
+            code = 'compat_source_skipped', message = message,
+          })
+        end
+        require('scripts.mom.diagnostics.log').warn('compat',
+          '%s: %s; skipped by compatErrorPolicy=skip', tostring(attempt.path), message)
+      elseif #attemptErrors > 0 then
+        for i = 1, #attemptErrors do errors[#errors + 1] = attemptErrors[i] end
+      else
+        attempt.actions = normalized
+      end
     end
   end
   if #errors > 0 then return nil, errors end

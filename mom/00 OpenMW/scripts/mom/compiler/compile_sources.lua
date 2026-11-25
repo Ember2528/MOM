@@ -150,12 +150,26 @@ local function sourceIdentity(attempt)
   return adapterId .. '\0' .. path:gsub('\\', '/'):lower()
 end
 
+local function appendCompatSkipWarning(collector, sourcePath, message)
+  diagnostic_emit.append(collector, {
+    category = 'import-warning',
+    severity = 'warn',
+    phase = 'compile',
+    sourcePath = sourcePath,
+    code = 'compat_source_skipped',
+    message = tostring(message),
+  })
+  log.warn('compat', '%s: %s; skipped by compatErrorPolicy=skip',
+    tostring(sourcePath or '<compat>'), tostring(message))
+end
+
 local function prepareSources(cfg, catalog, collector)
   local states = {}
   local queries = emptyQueries()
   local seen = {}
   local failures = {}
   local sourceKeys = {}
+  local skipCompat = cfg.compatErrorPolicy == 'skip'
   for i = 1, #(cfg.sourceAttempts or {}) do
     local attempt = cfg.sourceAttempts[i]
     local state = {attempt = type(attempt) == 'table' and attempt or {}}
@@ -181,8 +195,10 @@ local function prepareSources(cfg, catalog, collector)
         else
           state.actionCount = type(attempt.actions) == 'table'
             and #attempt.actions or 0
+          local attemptKeys = {}
+          for k, v in pairs(sourceKeys) do attemptKeys[k] = v end
           local prepared, sourceQueries, prepareErrors =
-            source_lowering.prepareActions(attempt.actions, catalog, {sourceKeys = sourceKeys})
+            source_lowering.prepareActions(attempt.actions, catalog, {sourceKeys = attemptKeys})
           attempt.actions = nil
           if prepared == nil then
             state.failure = normalizeAttemptFailure(
@@ -191,6 +207,7 @@ local function prepareSources(cfg, catalog, collector)
               prepareErrors
             )
           else
+            sourceKeys = attemptKeys
             state.prepared = prepared
             state.actionCount = #prepared
             mergeQueries(queries, sourceQueries)
@@ -199,17 +216,25 @@ local function prepareSources(cfg, catalog, collector)
       end
     end
     if state.failure ~= nil then
-      state.disposition = 'failed'
-      failures[#failures + 1] = state.failure.message
-      if state.attempt.status == 'failed' and state.attempt.error ~= nil then
-        appendSourceFailure(collector, state.attempt, state.failure)
+      if skipCompat and state.attempt.kind == 'compat' then
+        appendCompatSkipWarning(collector, state.attempt.sourcePath or state.attempt.path, state.failure.message)
+        state.failure = nil
+        state.prepared = {}
+        state.actionCount = 0
+        state.disposition = 'skipped'
       else
-        appendCompileFailure(
-          collector,
-          state.failure.message,
-          state.attempt.sourcePath,
-          state.failure.code
-        )
+        state.disposition = 'failed'
+        failures[#failures + 1] = state.failure.message
+        if state.attempt.status == 'failed' and state.attempt.error ~= nil then
+          appendSourceFailure(collector, state.attempt, state.failure)
+        else
+          appendCompileFailure(
+            collector,
+            state.failure.message,
+            state.attempt.sourcePath,
+            state.failure.code
+          )
+        end
       end
     else
       state.disposition = 'prepared'
@@ -242,33 +267,45 @@ local function compileCurrentSources(cfg, catalog, collector)
 
   local actions = {}
   local lowerFailures = {}
+  local skipCompat = cfg.compatErrorPolicy == 'skip'
   for i = 1, #states do
     local state = states[i]
-    local normalized, lowerErrors = source_lowering.lowerActions(
-      state.prepared,
-      context,
-      catalog
-    )
-    state.prepared = nil
-    if normalized == nil then
-      state.failure = normalizeAttemptFailure(
-        state.attempt,
-        'source_lowering_failed',
-        lowerErrors
-      )
-      state.disposition = 'failed'
-      appendCompileFailure(
-        collector,
-        state.failure.message,
-        state.attempt.sourcePath,
-        state.failure.code
-      )
-      lowerFailures[#lowerFailures + 1] = state.failure.message
+    if state.disposition == 'skipped' then
+      state.prepared = nil
     else
-      state.disposition = 'accepted'
-      state.actionCount = #normalized.actions
-      for j = 1, #normalized.actions do
-        actions[#actions + 1] = normalized.actions[j]
+      local normalized, lowerErrors = source_lowering.lowerActions(
+        state.prepared,
+        context,
+        catalog
+      )
+      state.prepared = nil
+      if normalized == nil then
+        local lowerFailure = normalizeAttemptFailure(
+          state.attempt,
+          'source_lowering_failed',
+          lowerErrors
+        )
+        if skipCompat and state.attempt.kind == 'compat' then
+          appendCompatSkipWarning(collector, state.attempt.sourcePath or state.attempt.path, lowerFailure.message)
+          state.disposition = 'skipped'
+          state.actionCount = 0
+        else
+          state.failure = lowerFailure
+          state.disposition = 'failed'
+          appendCompileFailure(
+            collector,
+            state.failure.message,
+            state.attempt.sourcePath,
+            state.failure.code
+          )
+          lowerFailures[#lowerFailures + 1] = state.failure.message
+        end
+      else
+        state.disposition = 'accepted'
+        state.actionCount = #normalized.actions
+        for j = 1, #normalized.actions do
+          actions[#actions + 1] = normalized.actions[j]
+        end
       end
     end
   end
