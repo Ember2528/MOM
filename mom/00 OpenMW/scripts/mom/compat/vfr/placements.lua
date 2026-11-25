@@ -2,14 +2,16 @@
 -- actions. Shared compilation owns admission, sampling and record capabilities.
 local M = {}
 local source_ir = require('scripts.mom.compiler.source_ir')
+local vfr_common = require('scripts.mom.compat.vfr.common')
 local CELL_SIZE = 8192
 local finite = require('scripts.mom.common.numbers').isFinite
 local tables = require('scripts.mom.common.tables')
 local array = tables.isArray
-local function fields(value, allowed)
-  return type(value) == 'table' and tables.validateAllowedKeys(value, allowed) == nil
-end
-local MODULE_FIELDS = {name = true, seed = true, placements = true}
+local fields = vfr_common.fields
+local MODULE_FIELDS = {
+  name = true, enabled = true, priority = true, require_content = true, exclude_content = true,
+  seed = true, placements = true,
+}
 local PLACEMENT_FIELDS = {id = true, enabled = true, spawn = true, conditions = true, condition = true,
   record = true, alternatives = true, record_draft = true, position = true, rotation = true, scale = true,
   cell = true, interior = true, exterior = true}
@@ -24,32 +26,26 @@ local function vector(value, default)
   if not finite(x) or not finite(y) or not finite(z) then return nil end
   return {x, y, z}
 end
-local function contentNames(value)
-  if value == nil then return nil end
-  if type(value) == 'string' then value = {value} end
-  if not array(value) then return nil, 'invalid content conditions' end
-  local out = {}
-  for _, name in ipairs(value) do
-    if not text(name) then return nil, 'invalid content conditions' end
-    out[#out + 1] = name:lower()
-  end
-  return out
-end
-local function admission(raw, id, seed)
+local contentNames = vfr_common.contentNames
+local function admission(raw, id, seed, moduleHeader)
   local conditions = raw.conditions or raw.condition
-  if conditions == nil then return nil end
-  if not fields(conditions, CONDITION_FIELDS) then return nil, 'conditions contain unsupported fields' end
-  if raw.conditions ~= nil and raw.condition ~= nil then return nil, 'declare conditions or condition, not both' end
-  local chance = conditions.chance
+  if conditions ~= nil then
+    if not fields(conditions, CONDITION_FIELDS) then return nil, 'conditions contain unsupported fields' end
+    if raw.conditions ~= nil and raw.condition ~= nil then return nil, 'declare conditions or condition, not both' end
+  end
+  local chance = conditions and conditions.chance or nil
   if chance ~= nil and (not finite(chance) or chance < 0 or chance > 1) then
     return nil, 'conditions.chance must be between 0 and 1'
   end
-  local required, err = contentNames(conditions.require_content)
+  local required, err = contentNames(conditions and conditions.require_content or nil)
   if err then return nil, err end
   local excluded
-  excluded, err = contentNames(conditions.exclude_content)
+  excluded, err = contentNames(conditions and conditions.exclude_content or nil)
   if err then return nil, err end
-  return {requires = required, requiresNot = excluded,
+  local mergedReq = vfr_common.mergeContentNames(moduleHeader and moduleHeader.requires or nil, required)
+  local mergedExc = vfr_common.mergeContentNames(moduleHeader and moduleHeader.requiresNot or nil, excluded)
+  if conditions == nil and mergedReq == nil and mergedExc == nil then return nil end
+  return {requires = mergedReq, requiresNot = mergedExc,
     chance = chance, seed = seed, key = id, salt = 'condition'}
 end
 local function recordExpression(raw, id, seed)
@@ -115,7 +111,7 @@ end
 
 -- False means a valid placement was intentionally skipped. Nil indicates a
 -- malformed placement, with its diagnostic in the second return value.
-local function translatePlacement(placement, index, path, seen, seed)
+local function translatePlacement(placement, index, path, seen, seed, moduleHeader)
   local prefix = path .. '.placements[' .. index .. ']'
   if type(placement) == 'table' and text(placement.id) then
     prefix = prefix .. ' (' .. placement.id .. ')'
@@ -134,7 +130,7 @@ local function translatePlacement(placement, index, path, seen, seed)
   if placement.spawn ~= nil and type(placement.spawn) ~= 'boolean' then
     return nil, prefix .. ': spawn must be boolean'
   end
-  local when, err = admission(placement, id, seed)
+  local when, err = admission(placement, id, seed, moduleHeader)
   if err then return nil, prefix .. ': ' .. err end
   if placement.spawn then
     return nil, prefix .. ': native spawn placements are unsupported; leveled-list injection is supported separately'
@@ -155,6 +151,9 @@ local function translatePlacement(placement, index, path, seen, seed)
 
   local action = metadata(path, id)
   action.uniqueSourceKey = 'vfr:placement:' .. id
+  if moduleHeader and moduleHeader.priority ~= nil and moduleHeader.priority ~= 0 then
+    action.priority = moduleHeader.priority
+  end
   if scale ~= 1 then
     action.children = {source_ir.sourceActionOwned({modify = {scale = {to = scale}}},
       metadata(path, id, ':scale'))}
@@ -172,11 +171,14 @@ function M.translate(raw, path)
   if not fields(raw, MODULE_FIELDS) or not array(raw.placements) then
     return nil, path .. ': unsupported module fields or placements is not an array'
   end
+  local header, headerErr = vfr_common.validateModuleHeader(raw)
+  if not header then return nil, path .. ': ' .. headerErr end
   if raw.seed ~= nil and not finite(raw.seed) then return nil, path .. ': seed must be finite' end
+  if header.enabled == false then return {}, nil end
   local seed = finite(raw.seed) and math.floor(raw.seed) or 0
   local actions, seen = {}, {}
   for index, placement in ipairs(raw.placements) do
-    local action, err = translatePlacement(placement, index, path, seen, seed)
+    local action, err = translatePlacement(placement, index, path, seen, seed, header)
     if action == nil then return nil, err end
     if action ~= false then actions[#actions + 1] = action end
   end

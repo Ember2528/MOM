@@ -187,11 +187,53 @@ local function declarativeConditions()
   normalized(actions, L .. 'good.yaml', ACTIVE)
   expect(before[1].spec.leveled.operations[1].entries[1].id == 'good', 'source action ownership failed')
 end
+local function placementModuleHeaders()
+  local disabled = translated({name = 'Disabled Pack', enabled = false, placements = {placement('skipped')}})
+  expect(#disabled == 0, 'enabled: false placement module was not skipped')
+
+  local p = placement('header.gated')
+  p.conditions = {require_content = {'Tribunal.esm', 'Morrowind.esm'}, exclude_content = 'BadMod.esp'}
+  local actions = translated({
+    name = 'Gated Pack', enabled = true, priority = 7,
+    require_content = 'MORROWIND.ESM', exclude_content = {'OtherBad.esp'},
+    placements = {p},
+  })
+  expect(#actions == 1 and actions[1].priority == 7, 'placement module priority was not forwarded')
+  local adm = actions[1].spec.admission
+  expect(#adm.requires == 2 and adm.requires[1] == 'morrowind.esm' and adm.requires[2] == 'tribunal.esm'
+      and #adm.requiresNot == 2 and adm.requiresNot[1] == 'otherbad.esp' and adm.requiresNot[2] == 'badmod.esp',
+    'module and placement content gates did not merge cleanly')
+  expect(#normalized(actions, P, {['morrowind.esm'] = true}) == 0,
+    'merged placement content requirement admitted missing plugin')
+  expect(#normalized(translated({
+    name = 'Gated Pack', require_content = 'MORROWIND.ESM', exclude_content = 'OtherBad.esp',
+    placements = {p},
+  }), P, {['morrowind.esm'] = true, ['tribunal.esm'] = true}) == 1,
+    'satisfied merged module and placement content gates were rejected')
+  expect(#normalized(translated({
+    name = 'Gated Pack', require_content = 'MORROWIND.ESM', exclude_content = 'OtherBad.esp',
+    placements = {p},
+  }), P, {['morrowind.esm'] = true, ['tribunal.esm'] = true, ['otherbad.esp'] = true}) == 0,
+    'module-level exclude_content did not gate placements')
+
+  for _, bad in ipairs({
+    {name = 123, placements = {}},
+    {enabled = 'false', placements = {}},
+    {priority = 2.5, placements = {}},
+    {require_content = {''}, placements = {}},
+    {exclude_content = 42, placements = {}},
+    {unknown_field = true, placements = {}},
+  }) do
+    local res, err = placements.translate(bad, P)
+    expect(res == nil and type(err) == 'string', 'invalid placement module header was accepted')
+  end
+end
 function M.run()
   return support.runCases('VFR placements and leveled lists', {
     {'exact decorations produce ordinary actions without host facts', exactPlacement},
     {'shared seeded placement conditions and alternatives', deterministicChoices},
     {'foreign syntax rejects unsupported lifecycle without catalog decisions', unsupportedPlacements},
+    {'placement module headers and merged content gates', placementModuleHeaders},
     {'leveled additions preserve native list semantics', listMerge},
     {'list syntax skip and common optional-target policies', listValidation},
     {'VFR additions compose with native list edits', nativeListComposition},

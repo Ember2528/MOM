@@ -121,6 +121,10 @@ local function routeKey(group, typeName, recordId)
 end
 
 local function before(left, right)
+  local lap, rap = left.action.priority or 0, right.action.priority or 0
+  if lap ~= rap then return lap > rap end
+  local lrp, rrp = left.rule.priority or 0, right.rule.priority or 0
+  if lrp ~= rrp then return lrp > rrp end
   if left.rule.sourceKind ~= right.rule.sourceKind then return left.rule.sourceKind == 'record_id' end
   if left.rule.orderKey ~= right.rule.orderKey then return left.rule.orderKey < right.rule.orderKey end
   if left.action.id ~= right.action.id then return left.action.id < right.action.id end

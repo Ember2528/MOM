@@ -8,9 +8,10 @@ local keyed = require('scripts.mom.compiler.keyed_targets')
 local model = require('scripts.mom.contracts.model_path')
 local spatial = require('scripts.mom.domain.variation.spatial')
 local finite = require('scripts.mom.common.numbers').isFinite
+local isInteger = require('scripts.mom.common.numbers').isInteger
 local canonical = require('scripts.mom.contracts.canonical')
 local cache = setmetatable({}, {__mode = 'k'})
-local FIELDS = {choose = true, profile = true, keep = true, keepWeight = true, order = true}
+local FIELDS = {choose = true, profile = true, keep = true, keepWeight = true, order = true, priority = true}
 local function target(raw, path)
   local kind, value
   if type(raw) == 'string' and raw ~= '' then
@@ -38,8 +39,11 @@ function M.normalize(raw, path)
   if not tables.isArray(raw.choose) or #raw.choose == 0 then return nil, path .. '.choose: expected non-empty target/weight tuples' end
   if raw.keep ~= nil and raw.keep ~= 'stop' and raw.keep ~= 'continue' then return nil, path .. '.keep: expected stop or continue' end
   if raw.order ~= nil and (type(raw.order) ~= 'string' or raw.order == '') then return nil, path .. '.order: expected non-empty semantic order key' end
+  if raw.priority ~= nil and (not isInteger(raw.priority) or raw.priority < -2147483648 or raw.priority > 2147483647) then
+    return nil, path .. '.priority: expected 32-bit integer'
+  end
   if raw.keepWeight ~= nil and (not finite(raw.keepWeight) or raw.keepWeight < 0) then return nil, path .. '.keepWeight: expected nonnegative finite weight' end
-  local out = {choose = {}, keep = raw.keep or 'stop', order = raw.order, keepWeight = raw.keepWeight}
+  local out = {choose = {}, keep = raw.keep or 'stop', order = raw.order, priority = raw.priority, keepWeight = raw.keepWeight}
   local targets, weights, positive = {}, {raw.keepWeight or 0}, (raw.keepWeight or 0) > 0
   for i, tuple in ipairs(raw.choose) do
     local at = path .. '.choose[' .. tostring(i) .. ']'
@@ -62,7 +66,7 @@ function M.normalize(raw, path)
     if not copied then return nil, table.concat(errors or {}, ' | ') end
     out.profile = copied
   end
-  local descriptor = {targets = targets, profile = profile, keepStops = out.keep == 'stop', orderKey = out.order}
+  local descriptor = {targets = targets, profile = profile, keepStops = out.keep == 'stop', orderKey = out.order, priority = out.priority}
   cache[out] = {hash = canonical.assertHashValidated(out), descriptor = descriptor}
   return out, nil, descriptor
 end

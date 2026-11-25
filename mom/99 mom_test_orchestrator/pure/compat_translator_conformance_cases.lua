@@ -289,10 +289,11 @@ local function sssTranslationContract()
   local second = assert(sss.translateSource(source))
   expectValid(first, 'sss')
   expect(sourceHash(first) == sourceHash(second), 'SSS translation is nondeterministic')
-  expect(sourceHash(first) == 'mom64:98d53bfe49327f7e',
+  expect(sourceHash(first) == 'mom64:d639eaa4ac4c7250',
     'unchanged legacy SSS source lowering changed its saved semantic input')
 
   local action = first[1]
+  expect(action.priority == -2, 'SSS priority tier did not stay at -2 below native and VFR supersede')
   expect(action.diagnosticId == source.path .. '#compat:sss:sss:replace_meshes',
     'SSS diagnostic label changed')
   expect(action.spec.previsit == true, 'SSS exterior source did not request previsit')

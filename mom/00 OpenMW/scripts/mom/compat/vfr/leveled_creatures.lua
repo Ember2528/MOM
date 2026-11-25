@@ -3,30 +3,12 @@
 local M = {}
 local source_ir = require('scripts.mom.compiler.source_ir')
 local tables = require('scripts.mom.common.tables')
+local vfr_common = require('scripts.mom.compat.vfr.common')
 local array = tables.isArray
-local isInteger = require('scripts.mom.common.numbers').isInteger
-
-local function id(value)
-  return type(value) == 'string' and value:match('%S') and value:lower() or nil
-end
-local function integer(value, low, high)
-  return isInteger(value) and value >= low and value <= high
-end
-local function fields(value, allowed)
-  return type(value) == 'table' and tables.validateAllowedKeys(value, allowed) == nil
-end
-local function contentNames(value)
-  if value == nil then return nil end
-  if type(value) == 'string' then value = {value} end
-  if not array(value) then return nil, 'invalid content conditions' end
-  local out = {}
-  for _, name in ipairs(value) do
-    name = id(name)
-    if not name then return nil, 'invalid content conditions' end
-    out[#out + 1] = name
-  end
-  return out
-end
+local id = vfr_common.id
+local integer = vfr_common.integer
+local fields = vfr_common.fields
+local contentNames = vfr_common.contentNames
 local MODULE_FIELDS = {name = true, enabled = true, priority = true,
   require_content = true, exclude_content = true, injections = true}
 local RULE_FIELDS = {list = true, add = true}

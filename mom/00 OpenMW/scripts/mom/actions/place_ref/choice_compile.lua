@@ -24,8 +24,12 @@ local function intersectAllowed(types, mask)
   return out
 end
 local RULE_FIELDS = {sourceKey = true, sourceKind = true, sourceTypes = true,
-  targets = true, profile = true, keepStops = true, ignoreRecords = true, orderKey = true}
+  targets = true, profile = true, keepStops = true, ignoreRecords = true, orderKey = true, priority = true}
 local TARGET_FIELDS = {targetKind = true, targetValue = true}
+local isInteger = require('scripts.mom.common.numbers').isInteger
+local function validOptionalPriority(value)
+  return value == nil or (isInteger(value) and value >= -2147483648 and value <= 2147483647)
+end
 local function array(value, nonEmpty)
   return tables.isArray(value) and (not nonEmpty or #value > 0)
 end
@@ -65,6 +69,7 @@ function M.prepare(input, queries, ctx)
     if not knownFields(rule, RULE_FIELDS) or not nonEmpty(rule.sourceKey)
         or (rule.sourceKind ~= 'record_id' and rule.sourceKind ~= 'model_path')
         or not nonEmpty(rule.orderKey) or type(rule.keepStops) ~= 'boolean'
+        or not validOptionalPriority(rule.priority)
         or not array(rule.targets, true) or type(rule.sourceTypes) ~= 'table'
         or next(rule.sourceTypes) == nil or type(rule.ignoreRecords) ~= 'table' then
       return failure(rulePath, 'invalid source, types, ordering, or replacement targets')
@@ -107,7 +112,7 @@ function M.prepare(input, queries, ctx)
     if not profileValid then return failure(rulePath .. '.profile', tostring(profileError)) end
     prepared[i] = {parsed = parsed, sourceTypes = rule.sourceTypes, targets = targets,
       profile = profile, keepStops = rule.keepStops, ignoreRecords = rule.ignoreRecords,
-      orderKey = rule.orderKey}
+      priority = rule.priority, orderKey = rule.orderKey}
   end
   input.payload = {rules = prepared}
   return input, nil
@@ -203,7 +208,8 @@ function M.compile(spec, ctx)
               entry.choices[#entry.choices + 1] = {
                 targets = assert(plain_data.detach(targets)),
                 profileIndex = ruleProfileIndexes[typeName],
-                keepStops = rule.keepStops, orderKey = rule.orderKey, sourceKind = rule.parsed.sourceKeyKind}
+                keepStops = rule.keepStops, orderKey = rule.orderKey, sourceKind = rule.parsed.sourceKeyKind,
+                priority = rule.priority}
             else
               selector_skip_report.record(report, rulePath .. '.source', sourceId,
                 'source selector', 'ambiguous or changed record type')
@@ -220,6 +226,8 @@ function M.compile(spec, ctx)
     for _, id in ipairs(sortedKeys(byType[typeName])) do
       local entry = byType[typeName][id]
       table.sort(entry.choices, function(a, b)
+        local ap, bp = a.priority or 0, b.priority or 0
+        if ap ~= bp then return ap > bp end
         if a.sourceKind ~= b.sourceKind then return a.sourceKind == 'record_id' end
         return a.orderKey < b.orderKey
       end)
@@ -243,7 +251,7 @@ function M.compile(spec, ctx)
   end
   return outputs, nil
 end
-local CHOICE_FIELDS = {targets = true, profileIndex = true, keepStops = true, orderKey = true, sourceKind = true}
+local CHOICE_FIELDS = {targets = true, profileIndex = true, keepStops = true, orderKey = true, sourceKind = true, priority = true}
 local RESOLVED_TARGET_FIELDS = {targetKind = true, targetValue = true, targetType = true, unavailable = true}
 local function validateChoices(choices, variantCounts, usedProfiles)
   if not array(choices, true) then return nil, 'choices: expected non-empty dense array' end
@@ -251,6 +259,7 @@ local function validateChoices(choices, variantCounts, usedProfiles)
     local path = 'choices[' .. i .. ']'
     if not knownFields(choice, CHOICE_FIELDS) or not array(choice.targets, true)
         or type(choice.keepStops) ~= 'boolean' or not nonEmpty(choice.orderKey)
+        or not validOptionalPriority(choice.priority)
         or (choice.sourceKind ~= 'model_path' and choice.sourceKind ~= 'record_id') then
       return nil, path .. ': invalid rule fields, source kind, or targets'
     end

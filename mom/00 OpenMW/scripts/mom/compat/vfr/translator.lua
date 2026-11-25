@@ -58,6 +58,7 @@ function M.translateSource(source)
   end
   local parsed, err = category.parse(raw, category.forName(name), path)
   if parsed == nil then return failure(path, err) end
+  if parsed.disabled == true then return {}, true end
   local rows = {}
   for _, rule in ipairs(parsed.rules) do
     local choices = {}
@@ -67,11 +68,16 @@ function M.translateSource(source)
       choices[#choices + 1] = {value, 0}
     end
     local source = rule.sourceKind == 'record_id' and {recordId = rule.sourceKey} or rule.sourceKey
-    rows[#rows + 1] = {'*', source, {choose = choices, profile = rule.profile,
-      keep = rule.keepStops and 'stop' or 'continue', order = rule.orderKey}}
+    local expr = {choose = choices, profile = rule.profile,
+      keep = rule.keepStops and 'stop' or 'continue', order = rule.orderKey}
+    if rule.priority ~= nil then expr.priority = rule.priority end
+    rows[#rows + 1] = {'*', source, expr}
   end
   local spec = {attach = rows, select = {type = parsed.types}, disableOriginal = true,
     transferContents = parsed.transferContents}
+  if parsed.requires ~= nil or parsed.requiresNot ~= nil then
+    spec.admission = {requires = parsed.requires, requiresNot = parsed.requiresNot}
+  end
   local ignored = {}
   for id in pairs(parsed.rules[1].ignoreRecords) do ignored[#ignored + 1] = id end
   table.sort(ignored)

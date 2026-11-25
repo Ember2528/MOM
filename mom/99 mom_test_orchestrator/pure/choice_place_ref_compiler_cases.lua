@@ -484,6 +484,89 @@ function M.run()
     {'compiled choice programs validate before publication', programAdmission},
     {'profile pools deduplicate by exact native identity', profilePoolIdentity},
     {'ordinary placement rejects orphaned profile pools', orphanPoolAdmission},
+    {'choice runtime honors action tier priority, module rule priority, and KEEP fallthrough', function()
+      local choice_runtime = require('scripts.mom.actions.place_ref.choice_runtime')
+      local arbiter = require('scripts.mom.runtime.arbiter')
+      local function mkChoiceAction(id, actionPriority, rulePriority, targetMesh, defaultWeights, sourceKind, keepStops, orderKey)
+        local profile = assert(spatial.compile({default = defaultWeights}, {variantCount = 1}))
+        return {
+          id = id, family = 'place_ref', lifecycle = 'static', priority = actionPriority, specificity = 0, order = 1,
+          program = {
+            mode = 'relative', disableOriginal = true, choiceGroup = 'appearance',
+            profiles = {profile},
+            objects = {{
+              slot = 'r:1', sourceKeyKind = 'record_id', sourceRecordId = 'flora_a', inferredType = 'Static',
+              position = {x = 0, y = 0, z = 0},
+              choices = {{
+                sourceKind = sourceKind or 'model_path',
+                keepStops = keepStops == true,
+                priority = rulePriority,
+                orderKey = orderKey or ('1/' .. id),
+                profileIndex = 1,
+                targets = {{targetKind = 'model_path', targetValue = targetMesh}},
+              }},
+            }},
+          },
+        }
+      end
+      local facts = {
+        id = 'content:000001:morrowind.esm', recordId = 'flora_a', typeName = 'Static',
+        position = {x = 10, y = 20, z = 0},
+        currentCell = {key = '0,0', isExterior = true, gridX = 0, gridY = 0, region = ''},
+      }
+      -- 1. Supersede (-1) with alphabetically-later id beats default VFR (-3) with earlier id!
+      local defaultVfr = mkChoiceAction('a_default_vfr', -3, 100, 'meshes/default.nif', {0, 1})
+      local supersedeVfr = mkChoiceAction('z_supersede_vfr', -1, 0, 'meshes/supersede.nif', {0, 1})
+      local filters = assert(choice_runtime.prepareTargetFilters({defaultVfr, supersedeVfr}))
+      local winDefault = filters[defaultVfr.id](facts, {})
+      local winSupersede, _, chosenSupersede = filters[supersedeVfr.id](facts, {})
+      expect(winDefault == false and winSupersede == true and chosenSupersede.targetValue == 'meshes/supersede.nif',
+        'higher action priority tier did not beat alphabetically earlier lower-tier VFR choice')
+
+      -- 2. Within equal action priority (-3), higher VFR rule priority beats lower even with later id/orderKey!
+      local lowRule = mkChoiceAction('a_low_rule', -3, 0, 'meshes/low.nif', {0, 1})
+      local highRule = mkChoiceAction('z_high_rule', -3, 10, 'meshes/high.nif', {0, 1})
+      local f2 = assert(choice_runtime.prepareTargetFilters({lowRule, highRule}))
+      local winLow = f2[lowRule.id](facts, {})
+      local winHigh, _, chosenHigh = f2[highRule.id](facts, {})
+      expect(winLow == false and winHigh == true and chosenHigh.targetValue == 'meshes/high.nif',
+        'higher VFR rule priority did not beat lower rule priority within the same action tier')
+
+      -- 3. KEEP fallthrough on mesh rule falls through to lower-priority rule; record_id KEEP stops!
+      local keepMesh = mkChoiceAction('z_keep_mesh', -1, 5, 'meshes/never.nif', {1, 0}, 'model_path', false)
+      local fallbackMesh = mkChoiceAction('a_fallback', -3, 0, 'meshes/fallback.nif', {0, 1}, 'model_path', false)
+      local f3 = assert(choice_runtime.prepareTargetFilters({keepMesh, fallbackMesh}))
+      local m1 = f3[keepMesh.id](facts, {})
+      local m2, _, chosenFallback = f3[fallbackMesh.id](facts, {})
+      expect(m1 == false and m2 == true and chosenFallback.targetValue == 'meshes/fallback.nif',
+        'mesh KEEP (keepStops=false) did not fall through to lower-priority rule')
+
+      local stopRec = mkChoiceAction('z_stop_rec', -1, 0, 'meshes/never.nif', {1, 0}, 'record_id', true)
+      local f4 = assert(choice_runtime.prepareTargetFilters({stopRec, fallbackMesh}))
+      expect(f4[stopRec.id](facts, {}) == false and f4[fallbackMesh.id](facts, {}) == false,
+        'record_id KEEP (keepStops=true) did not stop lower-priority fallthrough')
+
+      -- 4. Full arbiter priority order: Native (0) > VFR supersede (-1) > SSS (-2) > VFR default (-3).
+      local function cand(id, prio)
+        return {
+          id = id, semanticId = id, targetId = 'content:000001:morrowind.esm',
+          priority = prio, specificity = 0, order = 1, claims = {'ref.enabled'},
+          action = {id = id, priority = prio, specificity = 0, order = 1, claims = {keys = {'ref.enabled'}}},
+        }
+      end
+      local res1 = arbiter.arbitrate({cand('vfr_def', -3), cand('sss', -2), cand('vfr_sup', -1), cand('native', 0)}, {})
+      expect(#res1.winners == 1 and res1.winners[1].semanticId == 'native', 'native (0) did not beat VFR/SSS')
+      local res2 = arbiter.arbitrate({cand('vfr_def', -3), cand('sss', -2), cand('vfr_sup', -1)}, {})
+      expect(#res2.winners == 1 and res2.winners[1].semanticId == 'vfr_sup', 'VFR supersede (-1) did not beat SSS (-2)')
+      local res3 = arbiter.arbitrate({cand('vfr_def', -3), cand('sss', -2)}, {})
+      expect(#res3.winners == 1 and res3.winners[1].semanticId == 'sss', 'SSS (-2) did not beat default VFR (-3)')
+
+      -- 5. Compiler rejects non-integer rule priority.
+      local badSpec = input()
+      badSpec.payload.rules[1].priority = 1.5
+      local badPrep, badErrs = compiler.prepare(badSpec, {recordIds = {}, meshPathTypes = {}}, {})
+      expect(badPrep == nil and type(badErrs) == 'table', 'non-integer rule priority escaped choice compiler')
+    end},
   })
 end
 return M

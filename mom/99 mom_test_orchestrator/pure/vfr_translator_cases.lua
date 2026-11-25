@@ -83,7 +83,7 @@ local function defaults()
   expect(rule.profile.seed == 0 and rule.profile.cluster.scale == 3072
       and rule.profile.cluster.detail == 1024 and rule.profile.cluster.detailWeight == 0.30
       and rule.profile.cluster.jitter == 0.22, 'plant clustering defaults changed')
-  expect(plants.priority == -1, 'default module unexpectedly superseded ordinary replacements')
+  expect(plants.priority == -3, 'default module unexpectedly superseded ordinary or SSS replacements')
   local containers = parse(module(), 'containers').rules[1]
   expect(containers.sourceTypes.Container and not containers.sourceTypes.Static, 'container kinds widened')
   local clutter = parse(module(), 'clutter')
@@ -110,7 +110,7 @@ local function recordRouting()
   expect(exact.targets[1].targetKind == 'record_id' and exact.targets[1].targetValue == 'flora_a', 'record target changed')
   expect(not mesh.keepStops and exact.ignoreRecords.flora_scripted and exact.ignoreRecords.flora_exact,
     'mesh fallback or normalized exclusions changed')
-  expect(exact.sourceTypes.Container and not exact.sourceTypes.Static and parsed.priority == 1,
+  expect(exact.sourceTypes.Container and not exact.sourceTypes.Static and parsed.priority == -1,
     'kind override or replacement priority changed')
   expect(exact.profile ~= mesh.profile and canonical.assertHash(exact.profile) == canonical.assertHash(mesh.profile)
       and exact.orderKey:sub(1, 2) == '1/' and exact.orderKey:find('/record_id/', 1, true),
@@ -275,6 +275,67 @@ local function canonicalProfileNames()
   rejected(raw, 'dense array')
 end
 
+local function moduleHeadersAndStrictKeys()
+  local raw = module()
+  raw.name = 'Custom Plants Pack'
+  raw.enabled = true
+  raw.priority = 12
+  raw.require_content = {'Morrowind.esm', 'Tamriel_Data.esm'}
+  raw.exclude_content = 'ConflictingMod.esp'
+  local parsed = parse(raw)
+  expect(parsed.priority == -3 and parsed.modulePriority == 12
+      and parsed.rules[1].priority == 12
+      and parsed.requires[1] == 'morrowind.esm' and parsed.requires[2] == 'tamriel_data.esm'
+      and parsed.requiresNot[1] == 'conflictingmod.esp',
+    'category module header priority or content gates were not preserved')
+
+  local actions, translated, err = translator.translateSource({path = PATH, config = raw})
+  expect(translated and err == nil and #actions == 1, 'category with module header failed to translate')
+  expect(actions[1].priority == -3
+      and actions[1].spec.attach[1][3].priority == 12
+      and actions[1].spec.admission.requires[1] == 'morrowind.esm'
+      and actions[1].spec.admission.requiresNot[1] == 'conflictingmod.esp',
+    'translator dropped category rule priority or content admission')
+
+  local disabled = module()
+  disabled.enabled = false
+  local disabledParsed = assert(category.parse(disabled, category.forName('plants'), PATH))
+  expect(disabledParsed.disabled == true, 'enabled: false category was not marked disabled')
+  local disabledActions, disabledTranslated, disabledErr = translator.translateSource({path = PATH, config = disabled})
+  expect(disabledTranslated == true and disabledErr == nil and type(disabledActions) == 'table'
+      and #disabledActions == 0,
+    'enabled: false category did not translate to an intentional empty action list')
+
+  -- Reject invalid header values and unknown keys at every nested schema level.
+  local invalidHeaders = {
+    {function(m) m.name = 42 end, 'name'},
+    {function(m) m.enabled = 'yes' end, 'enabled'},
+    {function(m) m.priority = 1.5 end, 'priority'},
+    {function(m) m.priority = 'high' end, 'priority'},
+    {function(m) m.require_content = {''} end, 'require_content'},
+    {function(m) m.exclude_content = false end, 'exclude_content'},
+    {function(m) m.unknown_top = true end, 'unknown_top'},
+    {function(m) m.clustering = {unknown_cluster = 1} end, 'unknown_cluster'},
+    {function(m) m.weights.unknown_weight = {1, 0, 0} end, 'unknown_weight'},
+    {function(m) m.weights.cells = {{x = 0, y = 0, w = {1, 0, 0}, extra = true}} end, 'extra'},
+    {function(m) m.weights.points = {{x = 0, y = 0, r = 5, w = {1, 0, 0}, extra = true}} end, 'extra'},
+    {function(m) m.weights.interiors = {room = {w = {1, 0, 0}, extra = true}} end, 'extra'},
+    {function(m) m.weights.interiors = {room = {w = {1, 0, 0}, region = 'West Gash'}} end, 'cannot combine'},
+    {function(m) m.weights.latitude = {{y = 0, w = {1, 0, 0}, extra = true}} end, 'extra'},
+    {function(m) m.weights.latitude = {{y = 0, w = {1, 0, 0}}}; m.weights.latitude_offset = {{x = 0, by = 1, extra = true}} end, 'extra'},
+    {function(m) m.climate_overrides = {['West Gash'] = {wetness = 50, extra = true}} end, 'extra'},
+    {function(m) m.variants['F\\Example.NIF'].extra = true end, 'extra'},
+    {function(m) m.record_variants = {rec_a = {records = {'a', 'b'}, extra = true}} end, 'extra'},
+  }
+  for i, spec in ipairs(invalidHeaders) do
+    local candidate = module()
+    spec[1](candidate)
+    local value, parseErr = resolved(candidate, 'plants')
+    expect(value == nil and type(parseErr) == 'string' and parseErr:find(spec[2], 1, true),
+      'invalid category schema case ' .. tostring(i) .. ' expected "' .. spec[2] .. '", got ' .. tostring(parseErr))
+  end
+end
+
 function M.run()
   return test_support.runCases('pure VFR translator', {
     {'path ownership', ownership}, {'example exclusion', examples}, {'category defaults', defaults},
@@ -282,6 +343,7 @@ function M.run()
     {'input ownership', noMutation}, {'native source admission', sourceShape},
     {'malformed source diagnostics', malformed}, {'unsupported capability diagnostics', unsupported},
     {'canonical profile names and ordered cells', canonicalProfileNames},
+    {'module headers and strict unknown-key rejection', moduleHeadersAndStrictKeys},
   })
 end
 

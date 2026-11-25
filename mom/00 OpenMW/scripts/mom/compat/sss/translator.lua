@@ -227,6 +227,7 @@ function M.translateSource(source)
         variant = 'sss:' .. basename(path), path = sourcePath,
       },
       diagnosticId = diagnosticId, family = 'place_ref',
+      priority = -2,
       allowEmptyCellSelection = branch.name ~= nil and true or nil,
     })
   end

@@ -177,6 +177,7 @@ local function choiceRows(sourceAction, spec, tuples, filters, actionPath, opts)
       rules[#rules + 1] = {sourceKey = parsed.sourceValue, sourceKind = parsed.sourceKeyKind,
         sourceTypes = types, targets = descriptor.targets, profile = descriptor.profile,
         keepStops = descriptor.keepStops, ignoreRecords = ignored,
+        priority = descriptor.priority,
         orderKey = descriptor.orderKey or string.format('%012d', row.sourceIndex)}
     end
     local parsed = input(spec, 'attach', tostring(sourceAction.diagnosticId) .. (#groups > 1 and (':' .. gi) or ''),

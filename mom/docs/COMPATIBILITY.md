@@ -111,6 +111,7 @@ The supported replacement data includes:
 - mesh sources in `variants` and record sources in `record_variants`;
 - mesh or record alternatives, with matching alternative counts across a module;
 - `ignore_records` and supported `kinds`;
+- module-level `name`, `enabled`, integer `priority`, `require_content` and `exclude_content`;
 - seeded spatial choices, category clustering defaults, region and climate
   weights, latitude/longitude and climate gradients, cell and point weights,
   and interior overrides;
@@ -122,9 +123,12 @@ weighted positions instead of renumbering the remaining choices. The winning
 choice is checked again when capture starts and then retained through partial
 work and recovery.
 
-SSS takes precedence over VFR replacement modules by default. A VFR module with
-`supersede_static_switcher: true` takes precedence over SSS instead. These
-choices still pass through MOM's ordinary conflict handling.
+Native MOM actions take highest precedence (`priority = 0`), followed by VFR
+modules with `supersede_static_switcher: true` (`priority = -1`), SSS
+(`priority = -2`), and default VFR modules (`priority = -3`). Within the same
+precedence tier, higher VFR module `priority` runs before lower `priority`,
+then exact `record_variants` before `variants` mesh rules. These choices still
+pass through MOM's ordinary conflict handling.
 
 An unrestricted choice proven to select one model can be promoted by the same
 planner as a native `attach`. This includes a supported Ingredient definition
@@ -156,7 +160,9 @@ Decoration modules can place existing Static or Activator records. They support
 permanent placement IDs, exact transforms, positive scale, seeded weighted
 record alternatives, chance, and required/excluded content conditions.
 
-A module has `name`, optional `seed`, and a `placements` array. Each placement
+A module has `name`, optional `enabled`, integer `priority`, `require_content`,
+`exclude_content`, `seed`, and a `placements` array. Module-level content gates
+combine with per-placement `conditions`. Each placement
 uses exactly one location (`cell`, `interior` or `exterior`) and an existing
 `record` or weighted `alternatives`. A string location identifies an interior;
 an exterior location can be `true` to derive its grid from position, or integer
