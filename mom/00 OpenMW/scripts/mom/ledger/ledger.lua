@@ -53,6 +53,7 @@ local function emptyIndexes()
     opsByOwner = {},        -- ownerId -> { [opId] = true }
     opsByAction = {},       -- actionId -> { [opId] = true }
     opsByCell = {},         -- cellKey -> { [opId] = true }
+    opsByTransitionKey = {}, -- transitionKey -> { [opId] = true }
     opsByLifecycle = {static = {}, state = {}},
     pendingOps = {},        -- opId -> nextFrame (number)
     positionRecovery = {},  -- targetId -> { [opId] = recoveryCells }
@@ -92,6 +93,7 @@ local function indexOp(idx, op)
   addSet(idx.opsByOwner, op.ownerId, id)
   addSet(idx.opsByAction, op.actionId, id)
   addSet(idx.opsByCell, op.cellKey, id)
+  addSet(idx.opsByTransitionKey, op.transitionKey, id)
   if op.lifecycle and idx.opsByLifecycle[op.lifecycle] then
     idx.opsByLifecycle[op.lifecycle][id] = true
   end
@@ -137,6 +139,7 @@ local function unindexOp(idx, op)
   removeSet(idx.opsByOwner, op.ownerId, id)
   removeSet(idx.opsByAction, op.actionId, id)
   removeSet(idx.opsByCell, op.cellKey, id)
+  removeSet(idx.opsByTransitionKey, op.transitionKey, id)
   if op.lifecycle and idx.opsByLifecycle[op.lifecycle] then
     idx.opsByLifecycle[op.lifecycle][id] = nil
   end
@@ -201,6 +204,9 @@ local function validateOp(op, key, errors)
   end
   if type(op.claims) ~= 'table' then
     errors[#errors + 1] = 'ops.' .. tostring(key) .. '.claims: expected array'
+  end
+  if op.transitionKey ~= nil and not nonEmpty(op.transitionKey) then
+    errors[#errors + 1] = 'ops.' .. tostring(key) .. '.transitionKey: expected non-empty string'
   end
   for _, vField in ipairs({'familyAbiVersion', 'behaviorVersion', 'programVersion', 'revertTokenVersion'}) do
     local v = op[vField]
@@ -403,6 +409,10 @@ end
 
 function Ledger:opsForCell(cellKey)
   return self.idx.opsByCell[cellKey]
+end
+
+function Ledger:opsForTransitionKey(transitionKey)
+  return transitionKey ~= nil and self.idx.opsByTransitionKey[transitionKey] or nil
 end
 
 function Ledger:opsForLifecycle(lifecycle)

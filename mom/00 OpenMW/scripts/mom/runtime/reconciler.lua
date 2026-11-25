@@ -544,18 +544,37 @@ function M.new(opts)
   end
 
   local function findStaticTransitionSource(action, targetId)
-    local ops = ledger:opsForTarget(targetId)
-    if ops == nil then return nil, nil end
-    local matches = {}
+    local mod = actionModules[action.family]
+    local keyHook = mod ~= nil and type(mod.transitionKey) == 'function' and mod.transitionKey or nil
+    local matchHook = mod ~= nil and type(mod.matchesTransitionSource) == 'function' and mod.matchesTransitionSource or nil
+    local tKey = keyHook ~= nil and keyHook(action.program) or nil
     local actionClaims = action.claims and action.claims.keys or {}
-    for opId in pairs(ops) do
+    local matches, seen = {}, {}
+    local function inspect(opId, byKey)
+      if seen[opId] then return end
+      seen[opId] = true
       local op = ledger:getOp(opId)
       if op ~= nil and op.lifecycle == 'static' and op.state == 'applied'
           and op.actionId ~= action.id and manifest.actionsById[op.actionId] == nil
-          and op.family == action.family
-          and claimsOverlap(op.claims, actionClaims) then
-        matches[#matches + 1] = op
+          and op.family == action.family then
+        local matched = byKey or claimsOverlap(op.claims, actionClaims)
+        if not matched and matchHook ~= nil then
+          matched = matchHook(action.program, op) == true
+        end
+        if matched then
+          matches[#matches + 1] = op
+        end
       end
+    end
+    if tKey ~= nil then
+      local keyedOps = ledger:opsForTransitionKey(tKey)
+      if keyedOps ~= nil then
+        for opId in pairs(keyedOps) do inspect(opId, true) end
+      end
+    end
+    local ops = ledger:opsForTarget(targetId)
+    if ops ~= nil then
+      for opId in pairs(ops) do inspect(opId, false) end
     end
     if #matches == 0 then return nil, nil end
     if #matches > 1 then return nil, 'ambiguous' end
@@ -618,6 +637,9 @@ function M.new(opts)
       end
 
       -- For state lifecycle, revert any existing child ops under `frontier` that are no longer desired.
+      -- For keyed static parents (transitionKey ~= nil), also revert stale reversible children
+      -- removed from the current manifest (e.g. a keyed placement whose scale reset back to 1)
+      -- unless a replacement candidate is transitioning that child.
       if lifecycle == 'state' then
         local toRevert = {}
         for pi = 1, #frontier do
@@ -637,6 +659,40 @@ function M.new(opts)
           if counter.mutations >= budgets.mutationLimit then break end
           executor.revert(ordered[i].op, frame)
           counter.mutations = counter.mutations + 1
+        end
+      else
+        local replacingOps = {}
+        for ci = 1, #candidates do
+          if candidates[ci].replacesOpId ~= nil then
+            replacingOps[candidates[ci].replacesOpId] = true
+          end
+        end
+        local toRevert = {}
+        for pi = 1, #frontier do
+          local parentOp = frontier[pi]
+          if parentOp.transitionKey ~= nil then
+            local children = ledger:opsForParent(parentOp.id)
+            if children ~= nil then
+              for childId in pairs(children) do
+                local childOp = ledger:getOp(childId)
+                if childOp ~= nil and childOp.lifecycle == 'static' and childOp.state == 'applied'
+                    and childOp.durability == 'reversible'
+                    and manifest.actionsById[childOp.actionId] == nil
+                    and not replacingOps[childOp.id] then
+                  collectDescendants(childId, toRevert, depth)
+                  toRevert[#toRevert + 1] = {op = childOp, depth = depth, semanticId = childOp.semanticId}
+                end
+              end
+            end
+          end
+        end
+        if #toRevert > 0 then
+          local ordered = arbiter.orderCleanups(toRevert)
+          for i = 1, #ordered do
+            if counter.mutations >= budgets.mutationLimit then break end
+            executor.revert(ordered[i].op, frame)
+            counter.mutations = counter.mutations + 1
+          end
         end
       end
 

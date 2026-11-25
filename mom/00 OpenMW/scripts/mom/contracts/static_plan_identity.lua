@@ -64,7 +64,7 @@ function M.discoveryRevisions(manifest)
         if child and child.lifecycle == 'static' and not visited[childId] then
           stack[#stack + 1] = {action = child, cursor = 1, children = {}}
         elseif childId ~= nil then
-          if revisions[childId] then
+          if child and child.lifecycle == 'static' then
             frame.children[#frame.children + 1] = {childId, revisions[childId]}
           end
           frame.cursor = frame.cursor + 1

@@ -491,6 +491,229 @@ local function scopedDirtyOwnerAndExternalGuardIsolation()
     're-activating 1 owner scanned beyond its dirty scope (matchCalls=' .. tostring(matchCalls) .. ')')
 end
 
+local function keyedPlacementInPlaceTransitionAndCrossCellMove()
+  local place_mod = require('scripts.mom.actions.place_ref')
+  local modify_mod = require('scripts.mom.actions.modify_ref')
+  local cellA = {
+    id = 'Cell A', idLower = 'cell a', key = 'cell a', interiorKey = 'cell a',
+    name = 'Cell A', nameLower = 'cell a', displayNameLower = 'cell a',
+    isExterior = false, worldspaceKey = 'sys::default',
+  }
+  local cellB = {
+    id = 'Cell B', idLower = 'cell b', key = 'cell b', interiorKey = 'cell b',
+    name = 'Cell B', nameLower = 'cell b', displayNameLower = 'cell b',
+    isExterior = false, worldspaceKey = 'sys::default',
+  }
+  local cellsByKey = {['cell a'] = cellA, ['cell b'] = cellB}
+  local activeCell = 'cell a'
+  local liveById, createdSeq = {}, 0
+  local function liveListFor(cellKey)
+    local out = {}
+    for _, ref in pairs(liveById) do
+      if ref.valid and ref.cell.key == cellKey then out[#out + 1] = ref end
+    end
+    return out
+  end
+  local session = {
+    world = {
+      beginFrame = function() end,
+      isValid = function(r) return r ~= nil and r.valid == true end,
+      observedCells = function()
+        local c = cellsByKey[activeCell]
+        return {[activeCell] = {handle = c, facts = c, routes = {'shared', 'interior:' .. activeCell}}}
+      end,
+      getObservedCell = function(k)
+        if k ~= activeCell then return nil end
+        local c = cellsByKey[activeCell]
+        return {handle = c, facts = c, routes = {'shared', 'interior:' .. activeCell}}
+      end,
+      isCellFenced = function() return false end,
+      cellRefs = function(c) return liveListFor(c.key), nil end,
+      describeRef = function(ref)
+        return {
+          id = ref.outputId or ref.id, objectId = ref.id, recordId = ref.recordId, typeName = 'Static',
+          position = ref.position, currentCell = ref.cell, cell = ref.cell,
+          origin = {cellId = ref.cell.key, cell = ref.cell, position = ref.position},
+        }, nil
+      end,
+      resolveTarget = function(id)
+        if id:sub(1, 5) == 'cell:' then
+          local k = id:sub(6)
+          return k == activeCell and cellsByKey[k] or nil
+        end
+        local ref = liveById[id]
+        if ref and ref.valid and ref.cell.key == activeCell then return ref end
+        return nil
+      end,
+      resolveCell = function(c)
+        local k = type(c) == 'table' and c.key or c
+        return k == activeCell and cellsByKey[k] or nil
+      end,
+      describeCell = function(c) return c, nil end,
+      registerLiveOutput = function(outputId, ref) ref.outputId = outputId; liveById[outputId] = ref end,
+      unregisterLiveOutput = function(outputId) liveById[outputId] = nil end,
+    },
+    refOps = {
+      read = function(ref)
+        return {
+          enabled = ref.enabled, scale = ref.scale, cell = ref.cell,
+          position = ref.position, rotation = ref.rotation,
+        }, nil
+      end,
+      readStarting = function(ref)
+        return {cell = ref.cell, position = ref.position, rotation = ref.rotation}, nil
+      end,
+      setScale = function(ref, s) ref.scale = s; return true, nil end,
+    },
+    placementOps = {
+      createObject = function(recordId, slot)
+        createdSeq = createdSeq + 1
+        local objId = string.format('@0x%x', createdSeq)
+        local ref = {
+          id = objId, recordId = recordId, cell = cellsByKey[slot.cell.key],
+          position = {x = slot.position.x, y = slot.position.y, z = slot.position.z},
+          rotation = {yaw = 0, pitch = 0, roll = 0},
+          scale = 1.0, enabled = true, valid = true,
+        }
+        return {ref = ref, objectId = objId}, nil
+      end,
+      removeObject = function(ref)
+        ref.valid = false
+        return true, nil
+      end,
+    },
+    guardCapabilities = {},
+    beginFrame = function() end,
+    syncObservedCells = function() return {}, {} end,
+    pollGuardEvents = function() return {} end,
+    clear = function() end,
+  }
+  local catalog = {
+    actions = {byId = {place_ref = {module = place_mod}, modify_ref = {module = modify_mod}}},
+    guards = {byId = {}},
+  }
+  local function buildManifest(opts)
+    local parentId = opts.parentId
+    local childIds, actionsById, actionIds = {}, {}, {parentId}
+    if opts.scale ~= nil then
+      local childId = opts.childId
+      childIds[1] = childId
+      actionIds[2] = childId
+      actionsById[childId] = {
+        id = childId, family = 'modify_ref', lifecycle = 'static', scope = 'ref',
+        parentId = parentId, reversible = true, priority = 0, specificity = 0, order = 2, chance = 1,
+        claims = {keys = {'ref.scale'}},
+        selection = {candidateTypes = {'Static'}},
+        program = {basePatch = {scale = {mode = 'to', value = opts.scale}}},
+        childIds = {},
+      }
+    end
+    actionsById[parentId] = {
+      id = parentId, family = 'place_ref', lifecycle = 'static', scope = 'cell',
+      reversible = true, priority = 0, specificity = 0, order = 1, chance = 1,
+      claims = {keys = {'output.existence'}},
+      selection = {cellPredicate = {kind = 'interior', exact = opts.cellKey}},
+      program = {
+        mode = 'absolute',
+        objects = {{
+          slot = 'a:instance:deadbeef01234567',
+          targetKind = 'record_id', targetValue = opts.recordId, targetType = 'Static',
+          position = {x = opts.x, y = 0, z = 0},
+          rotation = {yaw = 0, pitch = 0, roll = 0},
+        }},
+      },
+      childIds = childIds,
+    }
+    return {
+      contentHash = 'mom64:' .. opts.tag,
+      actionIds = actionIds, actionsById = actionsById,
+      ownerIds = {}, ownersById = {},
+      indexes = {staticByCell = {['interior:' .. opts.cellKey] = {parentId}}, ownersByCell = {}, ownersByEvent = {}},
+      extensions = {actions = {}, guards = {}, compat = {}},
+    }
+  end
+  local function boot(manifest, ledger)
+    local bundle = assert(coordinator_api.prepareActivation({
+      manifest = manifest, ledger = ledger, extensionCatalog = catalog,
+    }))
+    local rt = assert(coordinator_api.new({activationBundle = bundle, ledger = ledger, session = session}))
+    rt.reconciler.enqueueCell(activeCell)
+    return rt
+  end
+  local function settle(rt, startFrame)
+    for f = startFrame, startFrame + 5 do
+      assert(coordinator_api.tick(rt, {frame = f}))
+    end
+  end
+
+  local ledger = ledger_api.new()
+  -- Step 1: Initial spawn in Cell A with scale 1.25.
+  local rt = boot(buildManifest({
+    tag = 'v1', parentId = 'act:p1', childId = 'act:c1',
+    cellKey = 'cell a', recordId = 'lamp_v1', x = 10, scale = 1.25,
+  }), ledger)
+  settle(rt, 1)
+  local aliveA = liveListFor('cell a')
+  expect(#aliveA == 1 and aliveA[1].recordId == 'lamp_v1' and aliveA[1].position.x == 10
+      and aliveA[1].scale == 1.25 and ledger:opCount() == 2,
+    'initial keyed placement + scale child did not apply cleanly')
+
+  -- Step 2: Edit position/record AND scale (1.25 -> 1.5) in Cell A: ZERO duplicates!
+  rt = boot(buildManifest({
+    tag = 'v2', parentId = 'act:p2', childId = 'act:c2',
+    cellKey = 'cell a', recordId = 'lamp_v2', x = 50, scale = 1.5,
+  }), ledger)
+  settle(rt, 10)
+  aliveA = liveListFor('cell a')
+  expect(#aliveA == 1 and aliveA[1].recordId == 'lamp_v2' and aliveA[1].position.x == 50
+      and aliveA[1].scale == 1.5 and ledger:opCount() == 2,
+    'editing keyed placement record/position/scale duplicated object or kept stale scale (alive='
+      .. tostring(#aliveA) .. ', ops=' .. tostring(ledger:opCount()) .. ')')
+
+  -- Step 3: Edit ONLY scale back to 1.0 (child removed from manifest): reverts scale to 1.0!
+  rt = boot(buildManifest({
+    tag = 'v3', parentId = 'act:p2',
+    cellKey = 'cell a', recordId = 'lamp_v2', x = 50, scale = nil,
+  }), ledger)
+  settle(rt, 20)
+  aliveA = liveListFor('cell a')
+  expect(#aliveA == 1 and aliveA[1].scale == 1.0 and ledger:opCount() == 1,
+    'removing scale child (scale -> 1.0) did not revert scale on keyed placement (scale='
+      .. tostring(aliveA[1] and aliveA[1].scale) .. ', ops=' .. tostring(ledger:opCount()) .. ')')
+
+  -- Step 4: Re-add scale 1.75, then move keyed placement to Cell B while player is in Cell B (Cell A unloaded)!
+  rt = boot(buildManifest({
+    tag = 'v4', parentId = 'act:p2', childId = 'act:c4',
+    cellKey = 'cell a', recordId = 'lamp_v2', x = 50, scale = 1.75,
+  }), ledger)
+  settle(rt, 30)
+  expect(liveListFor('cell a')[1].scale == 1.75 and ledger:opCount() == 2,
+    're-adding scale child failed')
+
+  activeCell = 'cell b'
+  rt = boot(buildManifest({
+    tag = 'v5', parentId = 'act:p5', childId = 'act:c5',
+    cellKey = 'cell b', recordId = 'lamp_moved', x = 99, scale = 2.0,
+  }), ledger)
+  settle(rt, 40)
+  local aliveB = liveListFor('cell b')
+  expect(#aliveB == 1 and aliveB[1].recordId == 'lamp_moved' and aliveB[1].position.x == 99
+      and aliveB[1].scale == 2.0,
+    'moving keyed placement to Cell B while Cell A is unloaded did not spawn immediately in Cell B')
+
+  -- Step 5: Enter Cell A later -> deferred revert deletes old Cell A object AND retires orphaned :scale child!
+  activeCell = 'cell a'
+  rt.ledger:wakePendingReverts()
+  rt.reconciler.enqueueCell('cell a')
+  settle(rt, 50)
+  aliveA = liveListFor('cell a')
+  aliveB = liveListFor('cell b')
+  expect(#aliveA == 0 and #aliveB == 1 and ledger:opCount() == 2 and ledger:pendingCount() == 0,
+    're-entering old Cell A did not complete deferred cross-cell removal and retire old scale child (aliveA='
+      .. tostring(#aliveA) .. ', ops=' .. tostring(ledger:opCount())
+      .. ', pending=' .. tostring(ledger:pendingCount()) .. ')')
+end
+
 local function stressReconcile200TargetsInCell()
   local targets, byId = {}, {}
   local cellFacts = {
@@ -592,6 +815,7 @@ function M.run()
     {'mid-apply rollback across action families', midApplyRollbackAcrossActions},
     {'saved op extension version and validateStoredState gate', savedOpVersionAndValidateStoredStateGate},
     {'scoped dirty-owner reconciliation and external guard isolation', scopedDirtyOwnerAndExternalGuardIsolation},
+    {'keyed placement in-place transitions, scale reset, and cross-cell move', keyedPlacementInPlaceTransitionAndCrossCellMove},
     {'stress 200-target cell reconciliation', stressReconcile200TargetsInCell, {stress = true}},
   })
 end

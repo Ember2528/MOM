@@ -181,9 +181,11 @@ Keep each placement `id` unique across active imports. Within one file,
 duplicate IDs are invalid even for disabled entries; across files, inactive
 placements do not reserve an ID. IDs ignore case. Distinct IDs may deliberately
 place separate objects at the same transform. Reordering entries or moving
-files does not change their native instance identities. Other edits follow
-MOM's output replacement rules; the importer does not promise VFR's in-place
-updates or item relinquishment behavior.
+files does not change their native instance identities. Editing a keyed
+placement's position, rotation, record, cell, or scale updates its managed
+output in place without duplicating it; removing or disabling a placement does
+not currently auto-delete already-placed objects, and item relinquishment is
+not yet implemented.
 
 ## Variation Framework leveled creatures
 

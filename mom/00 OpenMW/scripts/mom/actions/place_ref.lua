@@ -61,6 +61,26 @@ function M.acceptsGeneratedRoot(program)
   return not (type(program) == 'table' and program.mode == 'relative')
 end
 
+function M.transitionKey(program)
+  if type(program) ~= 'table' or program.mode ~= 'absolute' then return nil end
+  local objs = program.objects
+  if type(objs) ~= 'table' or #objs ~= 1 then return nil end
+  local slot = objs[1] and objs[1].slot
+  if type(slot) ~= 'string' or slot:sub(1, 11) ~= 'a:instance:' then return nil end
+  return slot
+end
+
+function M.matchesTransitionSource(program, prevOp)
+  local key = M.transitionKey(program)
+  if key == nil or type(prevOp) ~= 'table' then return false end
+  if prevOp.transitionKey ~= nil then
+    return prevOp.transitionKey == key
+  end
+  local prevSlots = type(prevOp.token) == 'table' and prevOp.token.slots or nil
+  if type(prevSlots) ~= 'table' or #prevSlots ~= 1 then return false end
+  return prevSlots[1] and prevSlots[1].slot == key
+end
+
 return lazy_hooks.bind(M, 'scripts.mom.actions.place_ref.runtime', {
   matchesTarget = true, capture = true, apply = true, revert = true,
   advance = true, prepareTransition = true,

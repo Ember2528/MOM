@@ -44,6 +44,13 @@ local function opVersions(action, mod)
   return abi, behavior, prog, rev
 end
 
+local function opTransitionKey(action, mod)
+  if type(mod) == 'table' and type(mod.transitionKey) == 'function' then
+    return mod.transitionKey(action.program)
+  end
+  return nil
+end
+
 function M.new(opts)
   local ledger = assert(opts.ledger, 'executor requires ledger')
   local session = assert(opts.session, 'executor requires session')
@@ -180,6 +187,7 @@ function M.new(opts)
       outputs = copyList(res.outputs),
       recoveryCells = recoveryCells ~= nil and copyList(recoveryCells) or nil,
       appliedAt = frame,
+      transitionKey = opTransitionKey(action, mod),
       reassertable = type(mod.reassert) == 'function' or nil,
     })
 
@@ -223,6 +231,10 @@ function M.new(opts)
     local target = nil
     if op.targetId:sub(1, 5) == 'cell:' then
       target = session.world.resolveCell(op.targetId:sub(6))
+    elseif op.targetId:sub(1, 7) == 'output:' and ledger:getRef(op.targetId) == nil then
+      -- Parent placement already destroyed this generated output; retire child revert cleanly.
+      ledger:deleteOp(op.id)
+      return {status = 'noop'}
     else
       target = session.world.resolveTarget(op.targetId, ledger)
     end
@@ -285,7 +297,12 @@ function M.new(opts)
 
     local revRes = exec.revert(prevOp, frame)
     if revRes.status ~= 'applied' and revRes.status ~= 'noop' then
-      return revRes
+      -- Same-target transitions must wait for revert before applying.
+      -- Cross-target transitions (e.g. keyed placement moved to another cell)
+      -- may apply on the new target while the unloaded source cell reverts asynchronously.
+      if prevOp.targetId == candidate.targetId or revRes.status ~= 'pending' then
+        return revRes
+      end
     end
 
     local okApply, res = pcall(mod.apply, action.program, target, nextToken, nextCtx)
@@ -332,6 +349,7 @@ function M.new(opts)
       outputs = copyList(res.outputs),
       recoveryCells = recoveryCells ~= nil and copyList(recoveryCells) or nil,
       appliedAt = frame,
+      transitionKey = opTransitionKey(action, mod),
       reassertable = type(mod.reassert) == 'function' or nil,
     })
     return {status = res.status, op = op, outputs = op.outputs}
